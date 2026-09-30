@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visual-investigator"
+version = "0.1.0"
+description = "Evidence-driven visual investigation benchmark and tooling"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+vi-validate = "vi_benchmark:main_validate"
+vi-score = "vi_benchmark:main_score"
+
+[tool.setuptools]
+py-modules = ["vi_benchmark"]
