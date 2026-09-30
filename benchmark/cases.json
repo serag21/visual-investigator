@@ -1,0 +1,317 @@
+{
+  "benchmark": "Visual Investigator",
+  "version": "0.1",
+  "purpose": "Evaluate whether an evidence-driven visual investigation workflow improves real-world resolution versus naive multimodal Q&A.",
+  "cases": [
+    {
+      "id": "VI-01",
+      "category": "identification",
+      "difficulty": "easy",
+      "prompt": "What cable/connector is this?",
+      "ground_truth": "USB-C connector/cable if the image clearly shows the USB-C form factor.",
+      "trap": "USB-C shape does not by itself establish USB speed, power-delivery capability, Thunderbolt, or cable rating.",
+      "next_evidence": "Device-side connector or cable/device markings if capability matters.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:USB-C-connector-and-cable.png"
+    },
+    {
+      "id": "VI-02",
+      "category": "replacement",
+      "difficulty": "moderate",
+      "prompt": "What is this faucet part and what do I buy to replace it?",
+      "ground_truth": "Faucet aerator assembly when supported by the image; exact replacement requires thread/diameter/brand or faucet model evidence.",
+      "trap": "Calling an exact universal replacement from appearance alone.",
+      "next_evidence": "Outside/inside diameter, thread style, faucet brand/model, installed-faucet photo.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:Faucet_aerator_xfd5.jpg"
+    },
+    {
+      "id": "VI-03",
+      "category": "diagnosis",
+      "difficulty": "easy",
+      "prompt": "Why is this plumbing pipe shaped like this?",
+      "ground_truth": "P-trap/drain trap; explain water seal/function without inventing a leak diagnosis.",
+      "trap": "Assuming the visible assembly is leaking or defective when the prompt does not say so.",
+      "next_evidence": "If troubleshooting a leak, request the active leak location or short video.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:Leaking_PVC_Pipe_Under_Sink_-_P_Trap_(52842956605).jpg"
+    },
+    {
+      "id": "VI-04",
+      "category": "identification",
+      "difficulty": "easy",
+      "prompt": "What kind of bicycle derailleur is this?",
+      "ground_truth": "Rear derailleur when supported by the image; exact model requires visible branding/markings and/or bicycle context.",
+      "trap": "Naming a precise model or groupset without visible evidence.",
+      "next_evidence": "Close-up of logo/model marking; bicycle make/model/year if replacement is requested.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:Suntour_sprint_rear_derailleur.jpg"
+    },
+    {
+      "id": "VI-05",
+      "category": "identification",
+      "difficulty": "easy",
+      "prompt": "What type of connector is this?",
+      "ground_truth": "Identify only the connector family supported by visible geometry.",
+      "trap": "Inventing manufacturer or exact part number from generic connector geometry.",
+      "next_evidence": "Pitch/width measurement, mating connector, rear/keying view.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/Category:USB_connectors"
+    },
+    {
+      "id": "VI-06",
+      "category": "replacement",
+      "difficulty": "moderate",
+      "prompt": "My appliance part broke. What replacement should I buy?",
+      "ground_truth": "Identify the visible component and extract markings, but do not claim exact compatibility without appliance model/part evidence.",
+      "trap": "Visual silhouette match treated as confirmed OEM compatibility.",
+      "next_evidence": "Appliance model/serial label, molded part number, installation context.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-07",
+      "category": "replacement",
+      "difficulty": "moderate",
+      "prompt": "What filter do I need to buy?",
+      "ground_truth": "Extract visible dimensions/label information; verify nominal and actual dimensions and application before recommending.",
+      "trap": "Assuming the exact filter from appearance alone.",
+      "next_evidence": "Full label and all three dimensions if not visible.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:HVAC_air_filter.webp"
+    },
+    {
+      "id": "VI-08",
+      "category": "replacement",
+      "difficulty": "hard",
+      "prompt": "This faucet cartridge is bad. Which replacement do I buy?",
+      "ground_truth": "Identify cartridge family only if supported; exact replacement requires faucet/manufacturer/model or discriminating dimensions/features.",
+      "trap": "Matching by general shape where multiple cartridges look nearly identical.",
+      "next_evidence": "Faucet brand/model, stem shape, body dimensions, retaining method, photos from multiple angles.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-09",
+      "category": "replacement",
+      "difficulty": "hard",
+      "prompt": "I broke this bicycle derailleur hanger. Find the exact replacement.",
+      "ground_truth": "Explain that frame interface/year/model or exact geometry may be required before exact fit can be asserted.",
+      "trap": "Selecting by silhouette only.",
+      "next_evidence": "Bike make/model/year, frame interface photo, hanger dimensions.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-10",
+      "category": "replacement",
+      "difficulty": "moderate",
+      "prompt": "What replacement fan do I need?",
+      "ground_truth": "Extract voltage, current, size, connector, airflow/specs as relevant; exact compatibility depends on application.",
+      "trap": "Same-size fan with incompatible voltage/current/connector.",
+      "next_evidence": "Full label and connector close-up; device model if fit matters.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-11",
+      "category": "diagnosis",
+      "difficulty": "hard",
+      "prompt": "This outlet keeps tripping. How do I fix it?",
+      "ground_truth": "Identify likely GFCI/breaker context only if visible; distinguish symptom from cause and prioritize safe diagnostic steps.",
+      "trap": "Unsafe electrical instructions or asserting a specific fault without evidence.",
+      "next_evidence": "What trips, what is connected, whether reset immediately trips, circuit context; no live-work instructions.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:Circuit_Breaker.jpg"
+    },
+    {
+      "id": "VI-12",
+      "category": "diagnosis",
+      "difficulty": "moderate",
+      "prompt": "There is water under my sink here. What's wrong?",
+      "ground_truth": "Identify candidate leak points from image but require evidence of active leak origin before committing to cause.",
+      "trap": "Declaring P-trap failure just because the P-trap is visible.",
+      "next_evidence": "Short video or dry/observe cycle showing where water first appears.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:Leaking_PVC_Pipe_Under_Sink_-_P_Trap_(52842956605).jpg"
+    },
+    {
+      "id": "VI-13",
+      "category": "diagnosis",
+      "difficulty": "moderate",
+      "prompt": "What does this car warning light mean and what is wrong?",
+      "ground_truth": "Identify visible symbol if possible; separate symbol meaning from vehicle-specific failure diagnosis.",
+      "trap": "Claiming a specific mechanical failure from the symbol alone.",
+      "next_evidence": "Vehicle make/model/year, other warning lights, symptoms, diagnostic code if available.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-14",
+      "category": "diagnosis",
+      "difficulty": "moderate",
+      "prompt": "My laptop only charges if the cable is held at an angle. What is wrong?",
+      "ground_truth": "Consider damaged/worn port, cable, debris, connector or charger; recommend discriminating tests rather than immediate part replacement.",
+      "trap": "Immediately prescribing a motherboard or port replacement.",
+      "next_evidence": "Try known-good charger/cable, inspect port without live probing, device model.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-15",
+      "category": "diagnosis",
+      "difficulty": "hard",
+      "prompt": "My appliance is making this weird noise. What's wrong?",
+      "ground_truth": "A still image cannot establish the sound source; ask for model and audio/video plus symptom timing/context.",
+      "trap": "Hallucinating a failed bearing/motor/pump from a still photo.",
+      "next_evidence": "Short audio/video, model, when noise occurs, whether function is affected.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-16",
+      "category": "compatibility",
+      "difficulty": "moderate",
+      "prompt": "Can I replace this bulb with this other bulb?",
+      "ground_truth": "Compare visible base and ratings but verify voltage, wattage/temperature, fixture constraints, and application.",
+      "trap": "Treating similar appearance as electrical/fixture compatibility.",
+      "next_evidence": "Bulb labels and fixture rating/photograph.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:Light_bulb_with_bayonet_base.JPG"
+    },
+    {
+      "id": "VI-17",
+      "category": "compatibility",
+      "difficulty": "moderate",
+      "prompt": "What power adapter can replace this one?",
+      "ground_truth": "Extract input/output voltage, current, polarity, connector dimensions and device requirements.",
+      "trap": "Matching only by plug shape or nominal voltage while ignoring polarity/current.",
+      "next_evidence": "Full adapter label, connector close-up, device model.",
+      "image_status": "seeded_public",
+      "image_source": "https://commons.wikimedia.org/wiki/File:NEC_Versa_2760MT_mains_adapter.jpg"
+    },
+    {
+      "id": "VI-18",
+      "category": "compatibility",
+      "difficulty": "hard",
+      "prompt": "What hose/fitting will fit this broken fitting?",
+      "ground_truth": "Identify likely fitting family, but exact fit may require thread standard, diameter, sex, sealing method and application.",
+      "trap": "Treating nominal pipe size as a complete fit specification.",
+      "next_evidence": "Thread OD/ID, pitch, fitting type, hose ID/OD and mating side.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-19",
+      "category": "compatibility",
+      "difficulty": "hard",
+      "prompt": "What bolt do I need to replace this stripped one?",
+      "ground_truth": "Need diameter, pitch, length, head style, and application/strength requirements as appropriate.",
+      "trap": "Calling metric/imperial from appearance alone.",
+      "next_evidence": "Caliper/thread-gauge/known-good matching bolt and context of use.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-20",
+      "category": "compatibility",
+      "difficulty": "hard",
+      "prompt": "Find me a compatible aftermarket replacement for this filter.",
+      "ground_truth": "Determine exact dimensions/specification and application before considering alternatives.",
+      "trap": "Matching marketing name while ignoring dimensions/specification.",
+      "next_evidence": "Full filter label, dimensions and equipment model.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-21",
+      "category": "ambiguity",
+      "difficulty": "hard",
+      "prompt": "What is this?",
+      "ground_truth": "The image is deliberately low-information; correct behavior is to identify only what can be supported and request one targeted improved view.",
+      "trap": "Confident exact identification from insufficient evidence.",
+      "next_evidence": "One specific view/marking/scale cue selected for information value.",
+      "image_status": "synthetic_or_curated"
+    },
+    {
+      "id": "VI-22",
+      "category": "ambiguity",
+      "difficulty": "hard",
+      "prompt": "Which of these is the replacement part I need?",
+      "ground_truth": "Do not arbitrarily choose; establish device/application and differentiating geometry/specification.",
+      "trap": "Selecting by visual similarity only.",
+      "next_evidence": "Device model, existing part location, measurements or markings.",
+      "image_status": "synthetic_or_curated"
+    },
+    {
+      "id": "VI-23",
+      "category": "evidence_gathering",
+      "difficulty": "moderate",
+      "prompt": "I need the exact replacement, but this is all I can show you.",
+      "ground_truth": "Ask specifically for the model/part label or another high-value discriminator rather than a generic gallery of photos.",
+      "trap": "Asking for too many unrelated images.",
+      "next_evidence": "Manufacturer/model/part label.",
+      "image_status": "synthetic_or_curated"
+    },
+    {
+      "id": "VI-24",
+      "category": "evidence_gathering",
+      "difficulty": "hard",
+      "prompt": "Two replacement parts look identical. Which one do I need?",
+      "ground_truth": "Ask for one or two discriminating measurements/features that separate candidates.",
+      "trap": "Unfocused follow-up questions.",
+      "next_evidence": "Highest-information measurement(s) based on candidate differences.",
+      "image_status": "synthetic_or_curated"
+    },
+    {
+      "id": "VI-25",
+      "category": "multi_step",
+      "difficulty": "moderate",
+      "prompt": "This drawer slide broke. What do I need to fix it?",
+      "ground_truth": "Identify hardware family, determine length/mount style/extension, then provide replacement specification and installation path.",
+      "trap": "Shopping before measuring the critical dimensions.",
+      "next_evidence": "Slide length, mount style, side/center mount, load/context as relevant.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-26",
+      "category": "multi_step",
+      "difficulty": "hard",
+      "prompt": "I need the exact replacement for this cabinet hinge.",
+      "ground_truth": "Identify hinge family and obtain overlay/mounting/geometry details required for exact match.",
+      "trap": "Naming an exact hinge model without overlay or mounting evidence.",
+      "next_evidence": "Cup diameter/depth, overlay, mounting plate, screw pattern, door/frame context.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-27",
+      "category": "multi_step",
+      "difficulty": "hard",
+      "prompt": "I found this loose bicycle part. Where does it go and how do I put it back?",
+      "ground_truth": "Use wider bike context and geometry; ask for attachment location if not visible before giving installation instructions.",
+      "trap": "Hallucinating the component's location.",
+      "next_evidence": "Wide photo of bike plus close-up of nearby mounting points.",
+      "image_status": "needs_curated_image"
+    },
+    {
+      "id": "VI-28",
+      "category": "multi_step",
+      "difficulty": "moderate",
+      "prompt": "This fastener broke. What do I need to fix the assembly?",
+      "ground_truth": "Determine whether the fastener is structural/cosmetic, then identify needed fastener specification and repair method.",
+      "trap": "Substituting a generic screw without considering load/strength/application.",
+      "next_evidence": "Assembly context, dimensions, material, original fastener remnants.",
+      "image_status": "synthetic_or_curated"
+    },
+    {
+      "id": "VI-29",
+      "category": "outcome_first",
+      "difficulty": "moderate",
+      "prompt": "I don't care what this is called. I just need to replace it.",
+      "ground_truth": "Optimize for shortest path to replacement requirements rather than dictionary-style naming.",
+      "trap": "Spending the response explaining terminology without advancing replacement.",
+      "next_evidence": "Only evidence that discriminates between replacement candidates.",
+      "image_status": "synthetic_or_curated"
+    },
+    {
+      "id": "VI-30",
+      "category": "outcome_first",
+      "difficulty": "hard",
+      "prompt": "I know this is my dishwasher, but I don't know what part is failing. Here is the problem area.",
+      "ground_truth": "Use symptom + image to identify subsystem candidates and ask the smallest useful question/test to discriminate causes.",
+      "trap": "Giving a generic dishwasher repair guide or pretending the first hypothesis is confirmed.",
+      "next_evidence": "Model, symptom timing, sound/video, active location of water/heat/motion, relevant error code.",
+      "image_status": "synthetic_or_curated"
+    }
+  ]
+}
