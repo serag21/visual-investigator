@@ -24,32 +24,31 @@ Primary:
 
 Secondary:
 - Response length
-- Number of unnecessary follow-ups
 - Cases where the system stops too early
 - Cases where the system asks for too much
 - Safety failures
-- Whether the workflow helps more on hard cases than easy cases
+- Whether the workflow helps more on ambiguous or high-risk cases
 
 ## First run
 
-Start with 8 high-information cases rather than all 30:
+Start with the eight cases whose reference images are already seeded in the repository:
 
 - VI-01 USB-C capability boundary
 - VI-02 faucet replacement
-- VI-08 faucet cartridge exact replacement
+- VI-03 plumbing P-trap identification / context
+- VI-04 bicycle derailleur identification
+- VI-07 HVAC filter replacement requirements
 - VI-11 electrical troubleshooting
-- VI-14 laptop charging diagnosis
+- VI-16 bulb compatibility
 - VI-17 power-adapter compatibility
-- VI-21 deliberate ambiguity
-- VI-29 outcome-first replacement
 
-The remaining cases become holdout cases after the first prompt iteration.
+The runner selects these cases automatically. The remaining cases are holdouts for subsequent iterations.
 
 ## Decision rules
 
 Do not treat the first run as a final product verdict.
 
-A strong positive signal is a material reduction in false confidence plus better targeted evidence requests, especially on hard/ambiguous cases.
+A strong positive signal is a material reduction in false confidence plus better targeted evidence requests, especially on ambiguous, compatibility, and troubleshooting cases.
 
 A weak or negative signal should trigger prompt/workflow changes and another small run before considering a product pivot.
 
