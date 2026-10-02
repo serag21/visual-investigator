@@ -15,3 +15,6 @@ vi-score = "vi_benchmark:main_score"
 
 [tool.setuptools]
 py-modules = ["vi_benchmark"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
