@@ -65,18 +65,31 @@ def fetch_bytes(url: str) -> tuple[bytes, str]:
 
 def request_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={**headers, "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
+    transient_codes = {429, 500, 502, 503, 504}
+
+    for attempt in range(5):
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={**headers, "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code not in transient_codes or attempt == 4:
+                raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
+
+            retry_after = exc.headers.get("Retry-After")
+            try:
+                delay = float(retry_after) if retry_after else min(20.0, 2.0 ** attempt)
+            except ValueError:
+                delay = min(20.0, 2.0 ** attempt)
+
+            print(f"Transient HTTP {exc.code}; retrying in {delay:.1f}s...")
+            time.sleep(delay)
 
 
 def run_openai(case: dict[str, Any], system_prompt: str, model: str) -> str:
