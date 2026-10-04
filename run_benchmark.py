@@ -184,8 +184,34 @@ def main() -> int:
     selected.sort(key=lambda case: case["id"])
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8") as fh:
-        for index, case in enumerate(selected, 1):
+
+    completed_ids: set[str] = set()
+    if args.output.exists():
+        with args.output.open("r", encoding="utf-8") as existing:
+            for line in existing:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if (
+                    record.get("provider") == args.provider
+                    and record.get("model") == args.model
+                    and record.get("condition") == args.condition
+                ):
+                    completed_ids.add(record.get("case_id", ""))
+
+    pending = [case for case in selected if case["id"] not in completed_ids]
+    if completed_ids:
+        print(f"Resuming {args.condition}: skipping {len(completed_ids)} completed case(s).")
+
+    mode = "a" if args.output.exists() else "w"
+    with args.output.open(mode, encoding="utf-8") as fh:
+        completed_now = len(completed_ids)
+        for case in pending:
+            completed_now += 1
             started = time.perf_counter()
             if args.provider == "openai":
                 answer = run_openai(case, prompt, args.model)
@@ -203,9 +229,10 @@ def main() -> int:
                 "latency_ms": latency_ms,
             }
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-            print(f"[{index}/{len(selected)}] {case['id']} {latency_ms} ms")
+            fh.flush()
+            print(f"[{completed_now}/{len(selected)}] {case['id']} {latency_ms} ms")
 
-    print(f"Wrote {len(selected)} runs to {args.output}")
+    print(f"Benchmark output contains {len(completed_ids) + len(pending)} run(s) at {args.output}")
     return 0
 
 
