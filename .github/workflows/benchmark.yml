@@ -1,0 +1,57 @@
+name: Visual Investigator Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Gemini model ID"
+        required: true
+        default: "gemini-3.7-flash"
+        type: string
+      condition:
+        description: "Benchmark condition"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - baseline
+          - investigator
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate benchmark harness
+        run: python -m pytest -q
+
+      - name: Run baseline
+        if: ${{ inputs.condition == 'baseline' || inputs.condition == 'both' }}
+        continue-on-error: true
+        run: python run_benchmark.py --provider gemini --model "${{ inputs.model }}" --condition baseline --output "runs/${{ inputs.model }}-baseline.jsonl"
+
+      - name: Run investigator
+        if: ${{ inputs.condition == 'investigator' || inputs.condition == 'both' }}
+        continue-on-error: true
+        run: python run_benchmark.py --provider gemini --model "${{ inputs.model }}" --condition investigator --output "runs/${{ inputs.model }}-investigator.jsonl"
+
+      - name: Upload benchmark outputs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-investigator-benchmark-${{ inputs.model }}
+          path: runs/*.jsonl
+          if-no-files-found: warn
