@@ -17,6 +17,22 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+def load_local_env() -> None:
+    env_path = Path(".env")
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
 FIRST_RUN_IDS = {
     "VI-01",
     "VI-02",
@@ -173,6 +189,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
+    load_local_env()
     benchmark = load_cases(args.cases)
     prompt = (
         BASELINE_PROMPT
