@@ -14,7 +14,7 @@ on:
       model:
         description: "Gemini model ID"
         required: true
-        default: "gemini-3.7-flash"
+        default: "gemini-3.8-flash"
         type: string
       condition:
         description: "Benchmark condition"
@@ -33,7 +33,7 @@ jobs:
       contents: read
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      BENCHMARK_MODEL: ${{ inputs.model || 'gemini-3.7-flash' }}
+      BENCHMARK_MODEL: ${{ inputs.model || 'gemini-3.8-flash' }}
       BENCHMARK_CONDITION: ${{ inputs.condition || 'both' }}
 
     steps:
