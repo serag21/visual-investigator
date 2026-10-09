@@ -7,6 +7,9 @@ on:
       - "benchmark/**"
       - "prompts/**"
       - "run_benchmark.py"
+      - "tests/**"
+      - "docs/model-selection-v0.1.md"
+      - "docs/experiment-v0.1.md"
       - "vi_benchmark.py"
       - ".github/workflows/benchmark.yml"
   workflow_dispatch:
@@ -52,12 +55,12 @@ jobs:
         run: python -m pytest -q
 
       - name: Run baseline
-        if: ${{ env.BENCHMARK_CONDITION == 'baseline' || env.BENCHMARK_CONDITION == 'both' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (env.BENCHMARK_CONDITION == 'baseline' || env.BENCHMARK_CONDITION == 'both') }}
         continue-on-error: true
         run: python run_benchmark.py --provider gemini --model "${{ env.BENCHMARK_MODEL }}" --condition baseline --output "runs/${{ env.BENCHMARK_MODEL }}-baseline.jsonl"
 
       - name: Run investigator
-        if: ${{ env.BENCHMARK_CONDITION == 'investigator' || env.BENCHMARK_CONDITION == 'both' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (env.BENCHMARK_CONDITION == 'investigator' || env.BENCHMARK_CONDITION == 'both') }}
         continue-on-error: true
         run: python run_benchmark.py --provider gemini --model "${{ env.BENCHMARK_MODEL }}" --condition investigator --output "runs/${{ env.BENCHMARK_MODEL }}-investigator.jsonl"
 
