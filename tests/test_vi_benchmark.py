@@ -1,3 +1,7 @@
+from io import BytesIO
+from unittest.mock import MagicMock, patch
+import urllib.error
+
 import tempfile
 from pathlib import Path
 
@@ -53,3 +57,46 @@ def test_aggregate_runs():
     assert result["invalid_runs"] == 0
     assert result["systems"]["baseline"]["mean_score"] == 50.0
     assert result["systems"]["investigator"]["mean_score"] == 100.0
+
+
+
+def test_request_json_retries_503_then_succeeds():
+    from run_benchmark import request_json
+
+    url = "https://example.invalid/generate"
+    unavailable = urllib.error.HTTPError(
+        url, 503, "Service Unavailable", {}, BytesIO(b'{"status":"UNAVAILABLE"}')
+    )
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.return_value = b'{"ok":true}'
+
+    with (
+        patch("run_benchmark.urllib.request.urlopen", side_effect=[unavailable, response]) as urlopen,
+        patch("run_benchmark.time.sleep") as sleep,
+        patch("run_benchmark.random.uniform", return_value=0.1),
+    ):
+        result = request_json(url, {"test": True}, {})
+
+    assert result == {"ok": True}
+    assert urlopen.call_count == 2
+    sleep.assert_called_once_with(1.1)
+
+
+def test_request_json_does_not_retry_non_transient_http_errors():
+    from run_benchmark import request_json
+
+    url = "https://example.invalid/generate"
+    bad_request = urllib.error.HTTPError(
+        url, 400, "Bad Request", {}, BytesIO(b'{"error":"bad request"}')
+    )
+
+    with patch("run_benchmark.urllib.request.urlopen", side_effect=bad_request) as urlopen:
+        try:
+            request_json(url, {"test": True}, {})
+        except RuntimeError as exc:
+            assert "HTTP 400" in str(exc)
+        else:
+            raise AssertionError("Expected HTTP 400 to fail immediately")
+
+    assert urlopen.call_count == 1
