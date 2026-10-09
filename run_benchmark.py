@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import random
@@ -45,6 +46,8 @@ FIRST_RUN_IDS = {
     "VI-17",
 }
 
+IMAGE_CACHE_DIR = Path(".cache/visual-investigator/images")
+
 BASELINE_PROMPT = """Answer the user's question based on the supplied image.
 Be accurate and concise. If the image does not provide enough information,
 say what you cannot determine and what additional information would help."""
@@ -70,14 +73,69 @@ def resolve_image_url(source: str) -> str:
 
 
 def fetch_bytes(url: str) -> tuple[bytes, str]:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "visual-investigator-benchmark/0.1"},
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        data = response.read()
-        content_type = response.headers.get("Content-Type", "image/jpeg").split(";")[0]
-    return data, content_type
+    """Fetch and locally cache a public reference image with bounded retries."""
+    cache_key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    data_path = IMAGE_CACHE_DIR / f"{cache_key}.bin"
+    mime_path = IMAGE_CACHE_DIR / f"{cache_key}.mime"
+
+    if data_path.is_file() and mime_path.is_file():
+        data = data_path.read_bytes()
+        mime_type = mime_path.read_text(encoding="utf-8").strip()
+        if data and mime_type.startswith("image/"):
+            print(f"Using cached reference image ({len(data):,} bytes).")
+            return data, mime_type
+
+    transient_codes = {408, 429, 500, 502, 503, 504}
+    max_attempts = 5
+
+    for attempt in range(max_attempts):
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "VisualInvestigatorBenchmark/0.1 (public reference-image evaluation)",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                data = response.read()
+                mime_type = response.headers.get("Content-Type", "image/jpeg").split(";")[0].strip().lower()
+                if not data:
+                    raise RuntimeError(f"Image source returned an empty response: {url}")
+                if not mime_type.startswith("image/"):
+                    raise RuntimeError(
+                        f"Image source returned Content-Type {mime_type!r}, not an image: {url}"
+                    )
+
+                IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                data_path.write_bytes(data)
+                mime_path.write_text(mime_type, encoding="utf-8")
+                return data, mime_type
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code not in transient_codes or attempt == max_attempts - 1:
+                raise RuntimeError(
+                    f"HTTP {exc.code} while downloading reference image {url}: {detail}"
+                ) from exc
+            delay = _retry_delay(attempt, exc.headers.get("Retry-After"))
+            print(
+                f"Reference-image host HTTP {exc.code}; "
+                f"retry {attempt + 1}/{max_attempts - 1} in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            if attempt == max_attempts - 1:
+                raise RuntimeError(
+                    f"Network error after {max_attempts} attempts downloading reference image {url}: {exc}"
+                ) from exc
+            delay = _retry_delay(attempt)
+            print(
+                f"Transient reference-image network error; "
+                f"retry {attempt + 1}/{max_attempts - 1} in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+
+    raise RuntimeError(f"Image download from {url} ended unexpectedly without a response.")
 
 
 def _retry_delay(attempt: int, retry_after: str | None = None) -> float:
