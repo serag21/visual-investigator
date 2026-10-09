@@ -92,7 +92,7 @@ def fetch_bytes(url: str) -> tuple[bytes, str]:
         request = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "VisualInvestigatorBenchmark/0.1 (public reference-image evaluation)",
+                "User-Agent": "VisualInvestigatorBenchmark/0.1 (https://github.com/serag21/visual-investigator; contact via GitHub issues)",
                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             },
         )
@@ -117,7 +117,12 @@ def fetch_bytes(url: str) -> tuple[bytes, str]:
                 raise RuntimeError(
                     f"HTTP {exc.code} while downloading reference image {url}: {detail}"
                 ) from exc
-            delay = _retry_delay(attempt, exc.headers.get("Retry-After"))
+            retry_after = exc.headers.get("Retry-After")
+            delay = _retry_delay(attempt, retry_after)
+            # Wikimedia recommends waiting at least five seconds when a 429/503
+            # does not include Retry-After.
+            if exc.code in {429, 503} and not retry_after:
+                delay = max(5.0, delay)
             print(
                 f"Reference-image host HTTP {exc.code}; "
                 f"retry {attempt + 1}/{max_attempts - 1} in {delay:.1f}s..."
