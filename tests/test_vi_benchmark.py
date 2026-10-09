@@ -126,3 +126,27 @@ def test_fetch_bytes_retries_429_and_caches(tmp_path):
     assert second == first
     assert urlopen.call_count == 2  # 429 then successful fetch; second call reads local cache.
     sleep.assert_called_once_with(0.0)
+
+
+def test_fetch_bytes_waits_at_least_five_seconds_for_429_without_retry_after(tmp_path):
+    import run_benchmark
+
+    url = "https://example.invalid/reference-image"
+    rate_limited = urllib.error.HTTPError(
+        url, 429, "Too Many Requests", {}, BytesIO(b"rate limited")
+    )
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.return_value = b"fake-image-bytes"
+    response.headers = {"Content-Type": "image/jpeg"}
+
+    with (
+        patch.object(run_benchmark, "IMAGE_CACHE_DIR", tmp_path),
+        patch("run_benchmark.urllib.request.urlopen", side_effect=[rate_limited, response]),
+        patch("run_benchmark.time.sleep") as sleep,
+        patch("run_benchmark.random.uniform", return_value=0.1),
+    ):
+        result = run_benchmark.fetch_bytes(url)
+
+    assert result == (b"fake-image-bytes", "image/jpeg")
+    sleep.assert_called_once_with(5.0)
