@@ -100,3 +100,29 @@ def test_request_json_does_not_retry_non_transient_http_errors():
             raise AssertionError("Expected HTTP 400 to fail immediately")
 
     assert urlopen.call_count == 1
+
+
+def test_fetch_bytes_retries_429_and_caches(tmp_path):
+    import run_benchmark
+
+    url = "https://example.invalid/reference-image"
+    rate_limited = urllib.error.HTTPError(
+        url, 429, "Too Many Requests", {"Retry-After": "0"}, BytesIO(b"rate limited")
+    )
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.return_value = b"fake-image-bytes"
+    response.headers = {"Content-Type": "image/jpeg"}
+
+    with (
+        patch.object(run_benchmark, "IMAGE_CACHE_DIR", tmp_path),
+        patch("run_benchmark.urllib.request.urlopen", side_effect=[rate_limited, response]) as urlopen,
+        patch("run_benchmark.time.sleep") as sleep,
+    ):
+        first = run_benchmark.fetch_bytes(url)
+        second = run_benchmark.fetch_bytes(url)
+
+    assert first == (b"fake-image-bytes", "image/jpeg")
+    assert second == first
+    assert urlopen.call_count == 2  # 429 then successful fetch; second call reads local cache.
+    sleep.assert_called_once_with(0.0)
