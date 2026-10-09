@@ -57,3 +57,17 @@ If several workflow variants fail to improve real-world resolution over baseline
 ## Important
 
 The benchmark is intended to expose failure modes, not produce a vanity score. Every low-scoring case should be inspected individually.
+
+## Model availability and cost pilot
+
+The original control remains `gemini-3.8-flash`. Because the first baseline attempt repeatedly received provider HTTP 503 responses, evaluate `gemini-3.5-flash-lite` as a separate candidate rather than changing the model in the existing output file.
+
+Run each model under both conditions with model-specific output paths:
+- `runs/gemini-3.8-flash-baseline.jsonl`
+- `runs/gemini-3.8-flash-investigator.jsonl`
+- `runs/gemini-3.5-flash-lite-baseline.jsonl`
+- `runs/gemini-3.5-flash-lite-investigator.jsonl`
+
+A model comparison is only interpretable when its baseline and investigator use the same model, cases, and prompt conditions. The benchmark runner's `--model` argument already supports either candidate; no code changes are needed to select a model.
+
+See [Model selection experiment v0.1](model-selection-v0.1.md) for current official model references and decision rules.
