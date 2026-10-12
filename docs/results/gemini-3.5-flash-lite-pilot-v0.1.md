@@ -44,7 +44,7 @@ These eight observations are too few and too affected by network/model variance 
 1. The baseline is not a totally unprompted model. Its system prompt says to be accurate/concise and to state when the image is insufficient, including what additional information would help. This is a reasonable conservative baseline and makes the comparison harder—but more useful—than comparing against an intentionally careless prompt.
 2. The initial cases skew toward easy identification and a handful of replacement/compatibility tasks. The full 30-case bank, including deliberately ambiguous cases, is still needed before any model/product decision.
 3. These are qualitative review notes, not an independent double-scored benchmark. No aggregate quality score should be reported until every output is graded against the case rubric with explicit evidence for each score.
-4. The JSON fenced-block output from the investigator is an implementation defect for a machine-readable workflow. v0.2 enables Gemini's JSON response mode and records prompt identity/hash in output metadata so future runs are reproducible and not mixed silently.
+4. The JSON fenced-block output from the investigator is an implementation defect for a machine-readable workflow. v0.2 enables Gemini's schema-constrained JSON response mode and records prompt identity/hash in output metadata so future runs are reproducible and not mixed silently.
 
 ## Changes made for v0.2
 
