@@ -246,7 +246,46 @@ def run_gemini(case: dict[str, Any], system_prompt: str, model: str, json_output
         ],
     }
     if json_output:
-        payload["generationConfig"] = {"responseMimeType": "application/json"}
+        payload["generationConfig"] = {
+            "responseFormat": {
+                "text": {
+                    "mimeType": "application/json",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": ["resolved", "needs_evidence", "uncertain", "unsafe"],
+                            },
+                            "answer": {"type": "string"},
+                            "observations": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "hypotheses": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "missing_evidence": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "next_request": {"type": "string"},
+                            "recommended_action": {"type": "string"},
+                        },
+                        "required": [
+                            "status",
+                            "answer",
+                            "observations",
+                            "hypotheses",
+                            "missing_evidence",
+                            "next_request",
+                            "recommended_action",
+                        ],
+                    },
+                }
+            }
+        }
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     data = request_json(url, payload, {"x-goog-api-key": api_key})
     candidates = data.get("candidates") or []
