@@ -249,7 +249,7 @@ def run_gemini(case: dict[str, Any], system_prompt: str, model: str, json_output
         payload["generationConfig"] = {
             "responseFormat": {
                 "text": {
-                    "mimeType": "application/json",
+                    "mimeType": "APPLICATION_JSON",
                     "schema": {
                         "type": "object",
                         "properties": {
