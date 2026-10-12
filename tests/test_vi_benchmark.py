@@ -150,3 +150,28 @@ def test_fetch_bytes_waits_at_least_five_seconds_for_429_without_retry_after(tmp
 
     assert result == (b"fake-image-bytes", "image/jpeg")
     sleep.assert_called_once_with(5.0)
+
+
+def test_run_gemini_requests_json_mode_for_investigator():
+    from run_benchmark import run_gemini
+
+    case = {
+        "image_source": "https://example.invalid/reference-image",
+        "prompt": "Identify the object.",
+    }
+    response = {
+        "candidates": [
+            {"content": {"parts": [{"text": '{"status":"resolved","answer":"USB-C"}'}]}}
+        ]
+    }
+
+    with (
+        patch.dict("os.environ", {"GEMINI_API_KEY": "unit-test-key"}),
+        patch("run_benchmark.fetch_bytes", return_value=(b"test-image", "image/png")),
+        patch("run_benchmark.request_json", return_value=response) as request_json,
+    ):
+        answer = run_gemini(case, "Test investigator prompt", "gemini-test", json_output=True)
+
+    payload = request_json.call_args.args[1]
+    assert payload["generationConfig"]["responseMimeType"] == "application/json"
+    assert answer == '{"status":"resolved","answer":"USB-C"}'
