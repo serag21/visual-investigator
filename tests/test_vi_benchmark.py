@@ -173,5 +173,6 @@ def test_run_gemini_requests_json_mode_for_investigator():
         answer = run_gemini(case, "Test investigator prompt", "gemini-test", json_output=True)
 
     payload = request_json.call_args.args[1]
-    assert payload["generationConfig"]["responseMimeType"] == "application/json"
+    assert payload["generationConfig"]["responseFormat"]["text"]["mimeType"] == "application/json"
+    assert set(payload["generationConfig"]["responseFormat"]["text"]["schema"]["required"]) == {"status", "answer", "observations", "hypotheses", "missing_evidence", "next_request", "recommended_action"}
     assert answer == '{"status":"resolved","answer":"USB-C"}'
