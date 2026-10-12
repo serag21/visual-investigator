@@ -224,7 +224,7 @@ def run_openai(case: dict[str, Any], system_prompt: str, model: str) -> str:
     return text
 
 
-def run_gemini(case: dict[str, Any], system_prompt: str, model: str) -> str:
+def run_gemini(case: dict[str, Any], system_prompt: str, model: str, json_output: bool = False) -> str:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set.")
@@ -245,6 +245,8 @@ def run_gemini(case: dict[str, Any], system_prompt: str, model: str) -> str:
             }
         ],
     }
+    if json_output:
+        payload["generationConfig"] = {"responseMimeType": "application/json"}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     data = request_json(url, payload, {"x-goog-api-key": api_key})
     candidates = data.get("candidates") or []
@@ -279,6 +281,8 @@ def main() -> int:
         if args.condition == "baseline"
         else load_prompt(args.investigator_prompt)
     )
+    prompt_id = "baseline-v0.1" if args.condition == "baseline" else args.investigator_prompt.stem
+    prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
     selected = [case for case in benchmark["cases"] if case["id"] in FIRST_RUN_IDS]
     selected.sort(key=lambda case: case["id"])
@@ -296,10 +300,20 @@ def main() -> int:
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                record_prompt_id = record.get("prompt_id")
+                if record_prompt_id is None:
+                    # Backward compatibility for existing local JSONL files created
+                    # before prompt-version metadata was recorded.
+                    record_prompt_id = (
+                        "baseline-v0.1"
+                        if record.get("condition") == "baseline"
+                        else "investigator-v0.1"
+                    )
                 if (
                     record.get("provider") == args.provider
                     and record.get("model") == args.model
                     and record.get("condition") == args.condition
+                    and record_prompt_id == prompt_id
                 ):
                     completed_ids.add(record.get("case_id", ""))
 
@@ -316,7 +330,7 @@ def main() -> int:
             if args.provider == "openai":
                 answer = run_openai(case, prompt, args.model)
             else:
-                answer = run_gemini(case, prompt, args.model)
+                answer = run_gemini(case, prompt, args.model, json_output=args.condition == "investigator")
             latency_ms = round((time.perf_counter() - started) * 1000, 1)
 
             record = {
@@ -325,6 +339,8 @@ def main() -> int:
                 "provider": args.provider,
                 "model": args.model,
                 "condition": args.condition,
+                "prompt_id": prompt_id,
+                "prompt_sha256": prompt_sha256,
                 "answer": answer,
                 "latency_ms": latency_ms,
             }
