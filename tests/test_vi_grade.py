@@ -36,7 +36,7 @@ def write_cases(path: Path) -> Path:
         "cases": [
             {
                 "id": "VI-A", "category": "identification", "difficulty": "easy",
-                "prompt": "What is shown?", "ground_truth": "A connector.",
+                "prompt": "What is shown?", "image_source": "https://example.invalid/connector.jpg", "ground_truth": "A connector.",
                 "trap": "Do not invent a model.", "next_evidence": "Ask for its label.",
             },
             {
@@ -76,6 +76,7 @@ def test_blind_sheet_separates_key_and_shuffles_answers(tmp_path):
     assert {row["condition"] for row in key} == {"baseline", "investigator"}
     assert {row["grade_id"] for row in grades} == {row["grade_id"] for row in key}
     assert all(row["reference_expectation"] for row in grades)
+    assert all(row["image_source"] == "https://example.invalid/connector.jpg" for row in grades if row["case_id"] == "VI-A")
 
 
 def test_score_sheet_reports_weighted_scores_and_critical_failures(tmp_path):
