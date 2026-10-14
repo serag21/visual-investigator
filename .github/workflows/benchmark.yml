@@ -7,9 +7,12 @@ on:
       - "benchmark/**"
       - "prompts/**"
       - "run_benchmark.py"
+      - "vi_grade.py"
+      - "pyproject.toml"
       - "tests/**"
       - "docs/model-selection-v0.1.md"
       - "docs/experiment-v0.1.md"
+      - "docs/evaluation-rubric-v0.1.md"
       - "vi_benchmark.py"
       - ".github/workflows/benchmark.yml"
   workflow_dispatch:
@@ -48,11 +51,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install test dependencies
-        run: python -m pip install -q pytest
+      - name: Install project and test dependencies
+        run: python -m pip install -q -e . pytest
 
-      - name: Validate benchmark harness
-        run: python -m pytest -q
+      - name: Validate benchmark harness and grading CLI
+        run: |
+          python -m pytest -q
+          vi-grade --help
 
       - name: Run baseline
         if: ${{ github.event_name == 'workflow_dispatch' && (env.BENCHMARK_CONDITION == 'baseline' || env.BENCHMARK_CONDITION == 'both') }}
