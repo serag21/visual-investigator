@@ -10,56 +10,74 @@ The first milestone is to test the core hypothesis:
 
 > A structured visual-investigation workflow can reach trustworthy real-world outcomes more reliably than naive multimodal Q&A.
 
-The benchmark intentionally rewards useful uncertainty. A system is not penalized for saying "I can't determine the exact part yet" when the evidence genuinely is insufficient; it is penalized for confidently inventing an answer.
+The benchmark rewards useful uncertainty without rewarding unnecessary hesitation. It penalizes confident invention.
 
 ## Repository layout
 
 - `benchmark/cases.json` — 30 initial evaluation cases.
 - `vi_benchmark.py` — deterministic case validation, run validation, and scoring.
-- `tests/test_vi_benchmark.py` — unit tests for the harness.
-- `pyproject.toml` — minimal Python project configuration.
+- `run_benchmark.py` — model/provider execution; raw answer JSONL stays separate from grading.
+- `vi_grade.py` — blinded CSV grading, private unblinding key, and critical-failure reporting.
+- `tests/` — automated tests for validation, retries, and blinded grading.
+- `docs/market-intelligence/` — competitor watch and differentiation hypotheses.
 
-No model API keys are required for the harness.
+No API keys are required for validation or grading.
 
 ## Run locally
 
 Requires Python 3.11+.
 
-```bash
-python -m pytest
+```powershell
+python -m pip install -e .
+python -m pytest -q
 python vi_benchmark.py benchmark/cases.json
 ```
 
-A model/provider adapter will later emit JSONL records and can be scored with:
+Model runs use a local `.env` file; never commit API keys.
 
-```bash
-python -c "from vi_benchmark import main_score; raise SystemExit(main_score())" benchmark/cases.json runs/example.jsonl
+## Blind-grading workflow
+
+Use at least two comparable raw JSONL run files with matching case IDs. For example, to compare the existing baseline, v0.1, and v0.2 outputs:
+
+```powershell
+python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.1.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.csv" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
 ```
+
+Open `review.csv` in a spreadsheet and score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git.
+
+After saving the completed sheet:
+
+```powershell
+python vi_grade.py score --grades ".cache/visual-investigator/grading/review.csv" --key ".cache/visual-investigator/grading/review-key.csv" --output ".cache/visual-investigator/grading/scored.jsonl" --summary ".cache/visual-investigator/grading/summary.json"
+```
+
+The score command reports weighted quality, per-dimension means, and critical failures separately. A high mean must never conceal a safety-critical or false-compatibility failure. Raw model runs remain unchanged for reproducibility.
 
 ## Evaluation dimensions
 
-Each case is graded on a 0–2 scale for:
+Each answer is scored from 0 to 2:
 
-1. correctness
-2. uncertainty handling
-3. evidence gathering
-4. diagnosis
-5. compatibility
-6. actionability
-7. safety
-8. efficiency
+- **Correctness:** facts are supported by the image, prompt, and reliable references.
+- **Uncertainty:** confidence and status match the evidence.
+- **Evidence:** asks for the smallest useful missing fact or image.
+- **Diagnosis:** separates visible symptoms from possible causes.
+- **Compatibility:** does not assert exact fit without required evidence.
+- **Actionability:** advances the user's actual goal with a safe next step.
+- **Safety:** avoids dangerous instructions and unjustified reassurance.
+- **Efficiency:** short, direct, and free of unrelated filler.
 
-The weighted score is a useful comparison signal, not a substitute for inspecting individual failures.
+See `docs/evaluation-rubric-v0.1.md` for anchors, critical-failure rules, and grading procedure.
 
 ## Principles
 
 - **Observed != hypothesized != verified.**
 - Ask for evidence with high information value.
 - Exact compatibility requires exact evidence.
-- The user's actual outcome matters more than naming the object.
+- The user's actual outcome matters more than naming an object.
 - False confidence is a first-class failure.
-- Keep the benchmark independent of any specific model vendor.
+- Concise answers are part of quality, especially on a phone.
+- Keep evaluation independent of any one model vendor.
 
-## Next milestone
+## Current next milestone
 
-Build the first provider adapters and run a small subset of cases end-to-end before expanding the benchmark or building the consumer UI.
+Blindly grade the existing baseline/v0.1/v0.2 outputs, verify disputed image facts, and add targeted hard cases. In parallel, maintain an active competitor/review watch: photo-based diagnosis is already common, so differentiation must be demonstrated through better evidence selection, calibration, compatibility decisions, and verified outcomes before building a broad consumer UI.
