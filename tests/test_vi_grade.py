@@ -8,7 +8,13 @@ from vi_benchmark import DIMENSIONS
 from vi_grade import create_blind_sheet, score_blind_sheet
 
 
-def write_jsonl(path: Path, system: str, condition: str, answers: dict[str, str]) -> Path:
+def write_jsonl(
+    path: Path,
+    system: str,
+    condition: str,
+    answers: dict[str, str],
+    prompt_id: str | None = None,
+) -> Path:
     with path.open("w", encoding="utf-8") as handle:
         for case_id, answer in answers.items():
             handle.write(json.dumps({
@@ -17,7 +23,7 @@ def write_jsonl(path: Path, system: str, condition: str, answers: dict[str, str]
                 "provider": "test-provider",
                 "model": "test-model",
                 "condition": condition,
-                "prompt_id": condition,
+                "prompt_id": prompt_id if prompt_id is not None else condition,
                 "answer": answer,
                 "latency_ms": 10,
             }) + "\n")
@@ -161,3 +167,48 @@ def test_scoring_rejects_missing_rating(tmp_path):
         score_blind_sheet(
             grades_path, key_path, tmp_path / "scored.jsonl", tmp_path / "summary.json"
         )
+
+
+def test_prompt_versions_with_same_system_name_are_scored_separately(tmp_path):
+    cases = write_cases(tmp_path / "cases.json")
+    baseline = write_jsonl(
+        tmp_path / "baseline.jsonl", "gemini:flash-lite:baseline", "baseline",
+        {"VI-A": "A connector.", "VI-B": "Need dimensions."},
+        prompt_id="baseline-v0.1",
+    )
+    v01 = write_jsonl(
+        tmp_path / "investigator-v0.1.jsonl", "gemini:flash-lite:investigator", "investigator",
+        {"VI-A": "Maybe a connector.", "VI-B": "Need dimensions."},
+        prompt_id="investigator-v0.1",
+    )
+    v02 = write_jsonl(
+        tmp_path / "investigator-v0.2.jsonl", "gemini:flash-lite:investigator", "investigator",
+        {"VI-A": "A connector.", "VI-B": "Need thread dimensions."},
+        prompt_id="investigator-v0.2",
+    )
+    grades_path = tmp_path / "blind.csv"
+    key_path = tmp_path / "key.csv"
+    create_blind_sheet(cases, [baseline, v01, v02], grades_path, key_path, seed=5)
+
+    with grades_path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+        fieldnames = list(rows[0])
+    for row in rows:
+        for dimension in DIMENSIONS:
+            row[dimension] = "2"
+        row["critical_failure"] = "no"
+        row["critical_failure_reason"] = ""
+        row["grader_notes"] = ""
+    with grades_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    summary = score_blind_sheet(
+        grades_path, key_path, tmp_path / "scored.jsonl", tmp_path / "summary.json"
+    )
+    systems = summary["systems"]
+    assert systems["gemini:flash-lite:investigator:investigator-v0.1"]["cases"] == 2
+    assert systems["gemini:flash-lite:investigator:investigator-v0.2"]["cases"] == 2
+    assert "gemini:flash-lite:investigator" not in systems
+    assert len(systems) == 3
