@@ -43,7 +43,7 @@ Use at least two comparable raw JSONL run files with matching case IDs. For exam
 python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.1.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.csv" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
 ```
 
-Open `review.csv` in a spreadsheet and score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git.
+Open `review.csv` in a spreadsheet and score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git. The export hides system/provider/prompt labels and shuffles rows, but prose-vs-JSON output style may still reveal the condition; treat it as label-blinded, not perfect double-blind grading.
 
 After saving the completed sheet:
 
