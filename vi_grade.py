@@ -140,15 +140,25 @@ def create_blind_sheet(
             "critical_failure_reason": "",
             "grader_notes": "",
         })
+        condition = str(record.get("condition", ""))
+        prompt_id = str(record.get("prompt_id", ""))
+        system_label = str(record.get("system", path.stem))
+        # The runner's system field omits prompt version, so v0.1 and v0.2
+        # would otherwise collapse into one aggregate. Keep prompt versions
+        # distinct while preserving legacy labels where prompt_id is absent
+        # or merely repeats the condition name.
+        if condition == "investigator" and prompt_id and prompt_id != condition:
+            if not system_label.endswith(f":{prompt_id}"):
+                system_label = f"{system_label}:{prompt_id}"
         key_rows.append({
             "grade_id": grade_id,
             "case_id": case["id"],
             "source_file": str(path),
-            "system": str(record.get("system", path.stem)),
+            "system": system_label,
             "provider": str(record.get("provider", "")),
             "model": str(record.get("model", "")),
-            "condition": str(record.get("condition", "")),
-            "prompt_id": str(record.get("prompt_id", "")),
+            "condition": condition,
+            "prompt_id": prompt_id,
             "prompt_sha256": str(record.get("prompt_sha256", "")),
             "latency_ms": str(record.get("latency_ms", "")),
         })
