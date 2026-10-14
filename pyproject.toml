@@ -12,9 +12,10 @@ dependencies = []
 [project.scripts]
 vi-validate = "vi_benchmark:main_validate"
 vi-score = "vi_benchmark:main_score"
+vi-grade = "vi_grade:main"
 
 [tool.setuptools]
-py-modules = ["vi_benchmark"]
+py-modules = ["vi_benchmark", "vi_grade"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
