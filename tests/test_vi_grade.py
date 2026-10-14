@@ -112,6 +112,8 @@ def test_score_sheet_reports_weighted_scores_and_critical_failures(tmp_path):
     assert by_system["test:model:baseline"]["mean_score"] == 100.0
     assert by_system["test:model:investigator"]["critical_failures"] == 1
     assert by_system["test:model:investigator"]["critical_failure_rate"] == 0.5
+    assert by_system["test:model:baseline"]["mean_latency_ms"] == 10.0
+    assert by_system["test:model:investigator"]["p95_latency_ms"] == 10.0
     scored = [json.loads(line) for line in scored_path.read_text(encoding="utf-8").splitlines()]
     assert len(scored) == 4
     assert any(record["critical_failure"] for record in scored)
