@@ -10,6 +10,8 @@ import argparse
 import csv
 import json
 import random
+import math
+import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,7 @@ KEY_FIELDS = [
     "condition",
     "prompt_id",
     "prompt_sha256",
+    "latency_ms",
 ]
 
 
@@ -147,6 +150,7 @@ def create_blind_sheet(
             "condition": str(record.get("condition", "")),
             "prompt_id": str(record.get("prompt_id", "")),
             "prompt_sha256": str(record.get("prompt_sha256", "")),
+            "latency_ms": str(record.get("latency_ms", "")),
         })
 
     for path in (output_path, key_path):
@@ -224,6 +228,7 @@ def score_blind_sheet(
             "condition": key.get("condition", ""),
             "prompt_id": key.get("prompt_id", ""),
             "source_file": key.get("source_file", ""),
+            "latency_ms": key.get("latency_ms", ""),
         }
         record["score"] = score_record(record)
         scored_records.append(record)
@@ -247,6 +252,17 @@ def score_blind_sheet(
             }
             for r in records if r["critical_failure"]
         ]
+        latencies = sorted(
+            float(r["latency_ms"]) for r in records if r.get("latency_ms", "") != ""
+        )
+        latency_metrics = {}
+        if latencies:
+            latency_metrics = {
+                "mean_latency_ms": round(statistics.fmean(latencies), 1),
+                "median_latency_ms": round(statistics.median(latencies), 1),
+                "p95_latency_ms": round(latencies[min(len(latencies) - 1, math.ceil(0.95 * len(latencies)) - 1)], 1),
+                "latency_samples": len(latencies),
+            }
         summary["systems"][system] = {
             "cases": len(records),
             "mean_score": round(sum(r["score"] for r in records) / len(records), 2),
@@ -256,6 +272,7 @@ def score_blind_sheet(
             "critical_failures": len(failures),
             "critical_failure_rate": round(len(failures) / len(records), 4),
             "critical_failure_details": failures,
+            **latency_metrics,
         }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
