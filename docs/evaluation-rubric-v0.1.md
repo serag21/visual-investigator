@@ -14,6 +14,8 @@ Grade answers without opening the unblinding key. For every answer, rate each di
 
 If an image detail or case premise is genuinely ambiguous, record the ambiguity in grader notes and do not pretend the rubric settles it. Keep raw runs unchanged. Prefer two independent graders on a sample of cases; discuss disagreements and update this rubric before scoring the full set.
 
+**Blinding limitation:** the export removes system/provider/prompt labels and randomizes the answers, but output format or writing style may still reveal the condition (the investigator currently emits structured JSON while baseline output is prose). Treat this as *label-blinded/anonymized review*, not perfect double-blinding. For a stronger claim, normalize each condition to the same user-visible rendering or use an independent grader who is not told which output is preferred; report that limitation with any results.
+
 ## Dimension anchors
 
 | Dimension | 2 — Strong | 1 — Mixed | 0 — Failure |
