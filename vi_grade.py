@@ -11,6 +11,7 @@ import csv
 import json
 import random
 import math
+import re
 import statistics
 from collections import defaultdict
 from pathlib import Path
@@ -393,8 +394,28 @@ def score_blind_sheet(
     summary_path: Path,
 ) -> dict[str, Any]:
     """Unblind a completed scoring sheet and write scored JSONL + metrics."""
-    with grades_path.open(encoding="utf-8-sig", newline="") as handle:
-        grades = list(csv.DictReader(handle))
+    if grades_path.suffix.lower() == ".xlsx":
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise RuntimeError("Reading .xlsx output requires openpyxl. Install with python -m pip install -e .") from exc
+        workbook = load_workbook(grades_path, read_only=True, data_only=True)
+        if "Review" not in workbook.sheetnames:
+            raise ValueError("Workbook must contain a 'Review' sheet")
+        sheet = workbook["Review"]
+        values = sheet.iter_rows(values_only=True)
+        headers = next(values, None)
+        if not headers:
+            raise ValueError("Review sheet is empty")
+        header_names = [str(value) if value is not None else "" for value in headers]
+        grades = [
+            {header: ("" if value is None else str(value)) for header, value in zip(header_names, values_row)}
+            for values_row in values
+        ]
+        workbook.close()
+    else:
+        with grades_path.open(encoding="utf-8-sig", newline="") as handle:
+            grades = list(csv.DictReader(handle))
     with key_path.open(encoding="utf-8-sig", newline="") as handle:
         key_rows = list(csv.DictReader(handle))
 
