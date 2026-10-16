@@ -17,7 +17,7 @@ The benchmark rewards useful uncertainty without rewarding unnecessary hesitatio
 - `benchmark/cases.json` — 30 initial evaluation cases.
 - `vi_benchmark.py` — deterministic case validation, run validation, and scoring.
 - `run_benchmark.py` — model/provider execution; raw answer JSONL stays separate from grading.
-- `vi_grade.py` — blinded CSV grading, private unblinding key, and critical-failure reporting.
+- `vi_grade.py` — readable Excel/CSV grading, private unblinding key, and critical-failure reporting.
 - `tests/` — automated tests for validation, retries, and blinded grading.
 - `docs/market-intelligence/` — competitor watch and differentiation hypotheses.
 
@@ -40,15 +40,15 @@ Model runs use a local `.env` file; never commit API keys.
 Use at least two comparable raw JSONL run files with matching case IDs. For example, to compare the existing baseline, v0.1, and v0.2 outputs:
 
 ```powershell
-python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.1.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.csv" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
+python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.1.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.xlsx" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
 ```
 
-Open `review.csv` in a spreadsheet and score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git. The export hides system/provider/prompt labels and shuffles rows, but prose-vs-JSON output style may still reveal the condition; treat it as label-blinded, not perfect double-blind grading.
+Open `review.xlsx` in Excel. The workbook includes a Review sheet, instructions, a score guide, score dropdowns, and readable rendering of structured JSON answers. Score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git. The export hides system/provider/prompt labels and shuffles rows, but style and structure may still reveal the condition; treat it as label-blinded, not perfect double-blind grading. The original JSONL runs are unchanged.
 
 After saving the completed sheet:
 
 ```powershell
-python vi_grade.py score --grades ".cache/visual-investigator/grading/review.csv" --key ".cache/visual-investigator/grading/review-key.csv" --output ".cache/visual-investigator/grading/scored.jsonl" --summary ".cache/visual-investigator/grading/summary.json"
+python vi_grade.py score --grades ".cache/visual-investigator/grading/review.xlsx" --key ".cache/visual-investigator/grading/review-key.csv" --output ".cache/visual-investigator/grading/scored.jsonl" --summary ".cache/visual-investigator/grading/summary.json"
 ```
 
 The score command reports weighted quality, per-dimension means, and critical failures separately. A high mean must never conceal a safety-critical or false-compatibility failure. Raw model runs remain unchanged for reproducibility.
