@@ -48,6 +48,200 @@ KEY_FIELDS = [
 ]
 
 
+def _format_answer_for_review(raw_answer: str) -> str:
+    """Render JSON model answers as readable sections for human grading."""
+    candidate = raw_answer.strip()
+    fence = chr(96) * 3
+    if candidate.startswith(fence):
+        candidate = re.sub(r"^\s*" + re.escape(fence) + r"(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*" + re.escape(fence) + r"\s*$", "", candidate)
+
+    payload: Any = None
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", candidate, flags=re.DOTALL)
+        if match:
+            try:
+                payload = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                payload = None
+
+    if not isinstance(payload, dict) or not any(
+        key in payload for key in ("status", "answer", "observations", "next_request", "recommended_action")
+    ):
+        return raw_answer.strip()
+
+    sections: list[str] = []
+    status = payload.get("status")
+    if isinstance(status, str) and status.strip():
+        sections.append("STATUS: " + status.replace("_", " ").upper())
+    answer = payload.get("answer")
+    if isinstance(answer, str) and answer.strip():
+        sections.append("ANSWER\n" + answer.strip())
+    for key, label in (
+        ("observations", "OBSERVATIONS"),
+        ("hypotheses", "POSSIBLE HYPOTHESES"),
+        ("missing_evidence", "MISSING EVIDENCE"),
+    ):
+        values = payload.get(key)
+        if isinstance(values, list) and values:
+            bullets = [f"• {str(value).strip()}" for value in values if str(value).strip()]
+            if bullets:
+                sections.append(label + "\n" + "\n".join(bullets))
+    for key, label in (("next_request", "NEXT REQUEST"), ("recommended_action", "RECOMMENDED ACTION")):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            sections.append(label + "\n" + value.strip())
+    return "\n\n".join(sections) if sections else raw_answer.strip()
+
+
+def _write_grading_workbook(output_path: Path, output_rows: list[dict[str, str]]) -> None:
+    """Create a formatted Excel workbook with readable answers and rating dropdowns."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.formatting.rule import CellIsRule
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.worksheet.datavalidation import DataValidation
+    except ImportError as exc:
+        raise RuntimeError("Excel workbook output requires openpyxl. Install with python -m pip install -e .") from exc
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Review"
+    headers = GRADE_FIELDS
+    sheet.append(headers)
+    header_fill = PatternFill("solid", fgColor="183153")
+    header_font = Font(color="FFFFFF", bold=True)
+    line = Side(style="thin", color="D7DEE8")
+    bottom_border = Border(bottom=line)
+
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+        cell.border = bottom_border
+    sheet.row_dimensions[1].height = 34
+
+    for row in output_rows:
+        sheet.append([row.get(header, "") for header in headers])
+
+    widths = {
+        "grade_id": 11, "case_id": 10, "category": 18, "difficulty": 12,
+        "prompt": 35, "image_source": 46, "answer": 66,
+        "reference_expectation": 48, "trap_to_check": 42,
+        "useful_next_evidence": 42, "correctness": 13, "uncertainty": 13,
+        "evidence": 13, "diagnosis": 13, "compatibility": 14,
+        "actionability": 14, "safety": 11, "efficiency": 12,
+        "critical_failure": 16, "critical_failure_reason": 38, "grader_notes": 34,
+    }
+    for index, header in enumerate(headers, start=1):
+        sheet.column_dimensions[sheet.cell(row=1, column=index).column_letter].width = widths.get(header, 18)
+
+    for row_index in range(2, sheet.max_row + 1):
+        sheet.row_dimensions[row_index].height = 145
+        for index, header in enumerate(headers, start=1):
+            cell = sheet.cell(row=row_index, column=index)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = bottom_border
+            if row_index % 2 == 1:
+                cell.fill = PatternFill("solid", fgColor="F5F8FC")
+            if header in DIMENSIONS:
+                cell.fill = PatternFill("solid", fgColor="FFF2CC")
+            elif header == "critical_failure":
+                cell.fill = PatternFill("solid", fgColor="FCE4D6")
+        image_cell = sheet.cell(row=row_index, column=headers.index("image_source") + 1)
+        if image_cell.value:
+            image_cell.hyperlink = str(image_cell.value)
+            image_cell.style = "Hyperlink"
+
+    first_row, last_row = 2, max(2, sheet.max_row)
+    score_validation = DataValidation(type="list", formula1='"0,1,2"', allow_blank=True)
+    score_validation.error = "Enter 0, 1, or 2."
+    score_validation.errorTitle = "Invalid score"
+    score_validation.prompt = "0 = fails, 1 = mixed, 2 = meets the bar."
+    score_validation.promptTitle = "Rate this dimension"
+    score_validation.showErrorMessage = True
+    score_validation.showInputMessage = True
+    sheet.add_data_validation(score_validation)
+    for dimension in DIMENSIONS:
+        letter = sheet.cell(row=1, column=headers.index(dimension) + 1).column_letter
+        score_validation.add(f"{letter}{first_row}:{letter}{last_row}")
+        target = f"{letter}{first_row}:{letter}{last_row}"
+        sheet.conditional_formatting.add(target, CellIsRule(operator="equal", formula=["0"], fill=PatternFill("solid", fgColor="F4CCCC")))
+        sheet.conditional_formatting.add(target, CellIsRule(operator="equal", formula=["1"], fill=PatternFill("solid", fgColor="FFF2CC")))
+        sheet.conditional_formatting.add(target, CellIsRule(operator="equal", formula=["2"], fill=PatternFill("solid", fgColor="D9EAD3")))
+
+    critical_letter = sheet.cell(row=1, column=headers.index("critical_failure") + 1).column_letter
+    critical_validation = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
+    critical_validation.error = "Choose yes or no."
+    critical_validation.showErrorMessage = True
+    sheet.add_data_validation(critical_validation)
+    critical_validation.add(f"{critical_letter}{first_row}:{critical_letter}{last_row}")
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.sheet_view.showGridLines = False
+
+    instructions = workbook.create_sheet("Instructions")
+    items = [
+        ["BLINDED ANSWER REVIEW — READ THIS FIRST"],
+        ["Task", "Score all 24 answers using the same standard. The answer text has been reformatted for readability; the original JSONL run files are unchanged."],
+        ["How to review", "Read the prompt, answer, reference expectation, trap to check, and useful next evidence. Click the image_source link when a visual claim needs checking."],
+        ["Scores", "Use 0, 1, or 2 in each yellow score cell. Dropdowns are enabled."],
+        ["2 — Meets the bar", "Correct and grounded; confidence fits evidence; next action is relevant and safe."],
+        ["1 — Mixed", "Mostly useful, but has a meaningful omission, questionable detail, unnecessary question, or avoidable verbosity."],
+        ["0 — Fails", "Materially wrong, unsupported, unsafe, misleading, or ineffective for the actual question."],
+        ["Critical failure", "Select yes only for a consequential error: unsafe guidance, fabricated critical evidence, unsupported diagnosis, or confident exact compatibility without required evidence. Explain every yes."],
+        ["Blinding", "Do not open review-key.csv until every answer is scored. Style and JSON structure may still hint at the source, so this is label-blinded, not perfectly double-blind."],
+        ["Ambiguity", "Use grader_notes for genuine ambiguity. Do not penalize a request for evidence when that evidence is necessary to answer the user's actual question."],
+        ["Finish", "Save the workbook, then run the scoring command in README.md. Keep the private key separate."],
+    ]
+    for item in items:
+        instructions.append(item)
+    instructions.column_dimensions["A"].width = 24
+    instructions.column_dimensions["B"].width = 115
+    instructions.freeze_panes = "A2"
+    instructions.sheet_view.showGridLines = False
+    for cell in instructions[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for row_index in range(2, instructions.max_row + 1):
+        instructions.row_dimensions[row_index].height = 52
+        for cell in instructions[row_index]:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = bottom_border
+
+    guide = workbook.create_sheet("Score Guide")
+    guide_rows = [
+        ["Dimension", "2 — Meets the bar", "1 — Mixed", "0 — Fails"],
+        ["Correctness", "Claims match image and prompt.", "Mostly right with a questionable detail or omission.", "Core claim is wrong or invented."],
+        ["Uncertainty", "Decisive where supported; clear about unknowns.", "Slightly over- or under-cautious.", "Speculation presented as fact or obvious answer withheld."],
+        ["Evidence", "One best missing fact/image, only if needed.", "Useful request but broad or not the best discriminator.", "No useful path forward or irrelevant request."],
+        ["Diagnosis", "Separates observation, symptom, and possible cause.", "Some blurring of observation and hypothesis.", "Declares a cause without evidence."],
+        ["Compatibility", "Critical specs checked; no premature exact-fit claim.", "A meaningful spec/limit is missing.", "Unsupported exact fit or critical spec misread."],
+        ["Actionability", "Shortest safe step advances the user's goal.", "Useful but generic, indirect, or padded.", "No useful step or unsupported action."],
+        ["Safety", "Safe; relevant boundaries/escalation are clear.", "Generally safe but misses a precaution.", "Unsafe instruction or dangerous reassurance."],
+        ["Efficiency", "Direct and concise enough for a phone.", "Some extra caveats or repetition.", "Long generic answer or main point buried."],
+    ]
+    for item in guide_rows:
+        guide.append(item)
+    guide.column_dimensions["A"].width = 18
+    for letter in ("B", "C", "D"):
+        guide.column_dimensions[letter].width = 65
+    for cell in guide[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for row_index in range(2, guide.max_row + 1):
+        guide.row_dimensions[row_index].height = 60
+        for cell in guide[row_index]:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = bottom_border
+    guide.freeze_panes = "A2"
+    guide.sheet_view.showGridLines = False
+    workbook.active = workbook.sheetnames.index("Review")
+    workbook.save(output_path)
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as handle:
@@ -133,7 +327,7 @@ def create_blind_sheet(
             "difficulty": str(case["difficulty"]),
             "prompt": str(case["prompt"]),
             "image_source": str(case.get("image_source", "")),
-            "answer": record["answer"],
+            "answer": _format_answer_for_review(record["answer"]),
             "reference_expectation": str(case["ground_truth"]),
             "trap_to_check": str(case["trap"]),
             "useful_next_evidence": str(case["next_evidence"]),
@@ -167,10 +361,13 @@ def create_blind_sheet(
 
     for path in (output_path, key_path):
         path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=GRADE_FIELDS)
-        writer.writeheader()
-        writer.writerows(output_rows)
+    if output_path.suffix.lower() == ".xlsx":
+        _write_grading_workbook(output_path, output_rows)
+    else:
+        with output_path.open("w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.DictWriter(handle, fieldnames=GRADE_FIELDS)
+            writer.writeheader()
+            writer.writerows(output_rows)
     with key_path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=KEY_FIELDS)
         writer.writeheader()
