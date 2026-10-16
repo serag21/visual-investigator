@@ -46,6 +46,7 @@ KEY_FIELDS = [
     "prompt_id",
     "prompt_sha256",
     "latency_ms",
+    "raw_answer",
 ]
 
 
@@ -139,8 +140,11 @@ def _write_grading_workbook(output_path: Path, output_rows: list[dict[str, str]]
     for index, header in enumerate(headers, start=1):
         sheet.column_dimensions[sheet.cell(row=1, column=index).column_letter].width = widths.get(header, 18)
 
+    answer_column = headers.index("answer") + 1
     for row_index in range(2, sheet.max_row + 1):
-        sheet.row_dimensions[row_index].height = 145
+        answer_text = str(sheet.cell(row=row_index, column=answer_column).value or "")
+        wrapped_lines = sum(max(1, math.ceil(len(line) / 66)) for line in answer_text.splitlines())
+        sheet.row_dimensions[row_index].height = min(360, max(110, wrapped_lines * 15 + 12))
         for index, header in enumerate(headers, start=1):
             cell = sheet.cell(row=row_index, column=index)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -358,6 +362,7 @@ def create_blind_sheet(
             "prompt_id": prompt_id,
             "prompt_sha256": str(record.get("prompt_sha256", "")),
             "latency_ms": str(record.get("latency_ms", "")),
+            "raw_answer": record["answer"],
         })
 
     for path in (output_path, key_path):
@@ -447,7 +452,7 @@ def score_blind_sheet(
         record = {
             "case_id": row["case_id"],
             "system": key["system"],
-            "answer": row.get("answer", ""),
+            "answer": key.get("raw_answer", row.get("answer", "")),
             "scores": scores,
             "critical_failure": critical_value == "yes",
             "critical_failure_reason": failure_reason,
