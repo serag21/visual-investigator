@@ -40,7 +40,7 @@ Model runs use a local `.env` file; never commit API keys.
 Use at least two comparable raw JSONL run files with matching case IDs. For example, to compare the existing baseline, v0.1, and v0.2 outputs:
 
 ```powershell
-python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.1.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.xlsx" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
+python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.xlsx" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
 ```
 
 Open `review.xlsx` in Excel. The workbook includes a Review sheet, instructions, a score guide, score dropdowns, and readable rendering of structured JSON answers. Score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git. The export hides system/provider/prompt labels and shuffles rows, but style and structure may still reveal the condition; treat it as label-blinded, not perfect double-blind grading. The original JSONL runs are unchanged.
