@@ -6,6 +6,7 @@ import pytest
 
 from vi_benchmark import DIMENSIONS
 from vi_grade import create_blind_sheet, score_blind_sheet
+from openpyxl import load_workbook
 
 
 def write_jsonl(
@@ -213,3 +214,64 @@ def test_prompt_versions_with_same_system_name_are_scored_separately(tmp_path):
     assert systems["gemini:flash-lite:investigator:investigator-v0.2"]["cases"] == 2
     assert "gemini:flash-lite:investigator" not in systems
     assert len(systems) == 3
+
+
+def test_formatted_workbook_is_readable_and_can_be_scored(tmp_path):
+    cases = write_cases(tmp_path / "cases.json")
+    structured_answer = json.dumps({
+        "status": "resolved",
+        "answer": "This is a USB-C connector.",
+        "observations": ["Symmetric rounded-rectangle metal plug."],
+        "hypotheses": [],
+        "missing_evidence": [],
+        "next_request": "",
+        "recommended_action": "Check device compatibility if protocol matters.",
+    })
+    baseline = write_jsonl(
+        tmp_path / "baseline.jsonl", "test:model:baseline", "baseline",
+        {"VI-A": "A connector.", "VI-B": "Need dimensions."},
+    )
+    investigator = write_jsonl(
+        tmp_path / "investigator.jsonl", "test:model:investigator", "investigator",
+        {"VI-A": structured_answer, "VI-B": "Please measure the part."},
+        prompt_id="investigator-v0.2",
+    )
+    workbook_path = tmp_path / "review.xlsx"
+    key_path = tmp_path / "key.csv"
+    count = create_blind_sheet(
+        cases, [baseline, investigator], workbook_path, key_path, seed=17
+    )
+
+    assert count == 4
+    workbook = load_workbook(workbook_path)
+    assert {"Review", "Instructions", "Score Guide"}.issubset(workbook.sheetnames)
+    sheet = workbook["Review"]
+    headers = [cell.value for cell in sheet[1]]
+    answer_col = headers.index("answer") + 1
+    case_col = headers.index("case_id") + 1
+    review_rows = list(sheet.iter_rows(min_row=2))
+    vi_a_answers = [
+        row[answer_col - 1].value for row in review_rows
+        if row[case_col - 1].value == "VI-A"
+    ]
+    formatted = next(answer for answer in vi_a_answers if "STATUS: RESOLVED" in answer)
+    assert "This is a USB-C connector." in formatted
+    assert "OBSERVATIONS" in formatted
+    assert '"status"' not in formatted
+    assert len(sheet.data_validations.dataValidation) >= 2
+
+    for row in range(2, sheet.max_row + 1):
+        for dimension in DIMENSIONS:
+            col = headers.index(dimension) + 1
+            sheet.cell(row=row, column=col).value = 2
+        sheet.cell(row=row, column=headers.index("critical_failure") + 1).value = "no"
+    workbook.save(workbook_path)
+    workbook.close()
+
+    summary = score_blind_sheet(
+        workbook_path, key_path, tmp_path / "scored.jsonl", tmp_path / "summary.json"
+    )
+    assert summary["scored_answers"] == 4
+    scored = [json.loads(line) for line in (tmp_path / "scored.jsonl").read_text(encoding="utf-8").splitlines()]
+    structured_record = next(record for record in scored if record["answer"] == structured_answer)
+    assert structured_record["score"] == 100.0
