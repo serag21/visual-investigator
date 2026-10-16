@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from vi_benchmark import DIMENSIONS
-from vi_grade import create_blind_sheet, score_blind_sheet
+from vi_grade import _format_answer_for_review, create_blind_sheet, score_blind_sheet
 from openpyxl import load_workbook
 
 
@@ -275,3 +275,24 @@ def test_formatted_workbook_is_readable_and_can_be_scored(tmp_path):
     scored = [json.loads(line) for line in (tmp_path / "scored.jsonl").read_text(encoding="utf-8").splitlines()]
     structured_record = next(record for record in scored if record["answer"] == structured_answer)
     assert structured_record["score"] == 100.0
+
+
+def test_format_answer_for_review_strips_json_fences():
+    raw = (
+        chr(96) * 3 + "json\n"
+        + json.dumps({
+            "status": "needs_evidence",
+            "answer": "The exact part is not established yet.",
+            "observations": ["One marking is visible."],
+            "hypotheses": [],
+            "missing_evidence": ["The full model label."],
+            "next_request": "Send a close-up of the label.",
+            "recommended_action": "Do not order an exact replacement yet.",
+        })
+        + "\n" + chr(96) * 3
+    )
+    rendered = _format_answer_for_review(raw)
+    assert "STATUS: NEEDS EVIDENCE" in rendered
+    assert "ANSWER\nThe exact part is not established yet." in rendered
+    assert "MISSING EVIDENCE" in rendered
+    assert '"status"' not in rendered
