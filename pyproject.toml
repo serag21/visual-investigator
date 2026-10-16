@@ -7,7 +7,7 @@ name = "visual-investigator"
 version = "0.1.0"
 description = "Evidence-driven visual investigation benchmark and tooling"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["openpyxl>=3.1"]
 
 [project.scripts]
 vi-validate = "vi_benchmark:main_validate"
