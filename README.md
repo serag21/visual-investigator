@@ -20,6 +20,7 @@ The benchmark rewards useful uncertainty without rewarding unnecessary hesitatio
 - `vi_grade.py` — readable Excel/CSV grading, private unblinding key, and critical-failure reporting.
 - `tests/` — automated tests for validation, retries, and blinded grading.
 - `docs/market-intelligence/` — competitor watch and differentiation hypotheses.
+- `docs/autonomous-development-and-evaluation.md` — multi-agent workflow, model-assisted grading, and human approval gates.
 
 No API keys are required for validation or grading.
 
@@ -80,4 +81,4 @@ See `docs/evaluation-rubric-v0.1.md` for anchors, critical-failure rules, and gr
 
 ## Current next milestone
 
-Blindly grade the existing baseline/v0.1/v0.2 outputs, verify disputed image facts, and add targeted hard cases. In parallel, maintain an active competitor/review watch: photo-based diagnosis is already common, so differentiation must be demonstrated through better evidence selection, calibration, compatibility decisions, and verified outcomes before building a broad consumer UI.
+Establish the repeatable agent-assisted evaluation loop in `docs/autonomous-development-and-evaluation.md`: calibrate the grader, compare candidates on the frozen regression set, and maintain a sourced competitor/review watch. Keep human review focused on calibration, disputed ground truth, critical failures, and consequential decisions.
