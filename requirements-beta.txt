@@ -1,0 +1,21 @@
+# Tested Linux/Python 3.13 application dependency constraints, 2026-10-21.
+# Update deliberately, then rerun the offline and Linux release checks.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+fastapi==0.159.1
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.1
+pillow==12.3.0
+pillow_heif==1.8.1
+psycopg==3.3.6
+psycopg-binary==3.3.6
+pydantic==2.14.1
+pydantic_core==2.50.1
+python-dotenv==1.2.4
+starlette==1.9.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0

@@ -7,15 +7,26 @@ name = "visual-investigator"
 version = "0.1.0"
 description = "Evidence-driven visual investigation benchmark and tooling"
 requires-python = ">=3.11"
-dependencies = ["openpyxl>=3.1"]
+dependencies = []
+
+[project.optional-dependencies]
+app = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "Pillow>=11,<13", "pillow-heif>=1,<2", "python-dotenv>=1,<2", "psycopg[binary]>=3.2,<4"]
+test = ["pytest>=8,<10", "httpx>=0.27,<1"]
 
 [project.scripts]
 vi-validate = "vi_benchmark:main_validate"
 vi-score = "vi_benchmark:main_score"
 vi-grade = "vi_grade:main"
+vi-evaluate = "vi_evaluate:main"
+vi-review = "vi_review:main"
+vi-app = "investigator.server:main"
 
 [tool.setuptools]
-py-modules = ["vi_benchmark", "vi_grade"]
+py-modules = ["vi_benchmark", "vi_grade", "vi_evaluate", "vi_review"]
+packages = ["investigator"]
+
+[tool.setuptools.package-data]
+investigator = ["static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

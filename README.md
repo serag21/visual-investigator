@@ -1,84 +1,30 @@
-# Visual Investigator
+# Visual Investigator — private beta runtime
 
-Evidence-driven visual problem solving: identify what can be supported, determine what is unknown, ask for the smallest useful next evidence, and work toward a defensible real-world outcome.
+This branch contains the application runtime only. It is an invitation-gated
+experimental service, not a verified diagnostic or compatibility authority.
 
-## Current stage
+Render Free runs the pinned Docker image with managed HTTPS; Neon Free PostgreSQL
+stores invitation revocations, quotas and optional feedback. Set GEMINI_API_KEY,
+VI_SESSION_SECRET, VI_INVITE_HASHES and VI_DATABASE_URL in hosting secret settings.
+Never commit their values. Do not use an ephemeral SQLite path on Render.
 
-This repository is **validation infrastructure**, not the production app.
+Deploy this branch explicitly, with automatic deploys disabled. Confirm the
+workspace has no payment method and both services remain on Free before creation.
+The activation process limits real provider checks separately; the configuration
+request ceiling is an abuse control, not a billing guarantee.
 
-The first milestone is to test the core hypothesis:
+Photos/context stay in process memory until expiry or restart; explicit browser
+saves are readable, not encrypted. Users must consent to Gemini unpaid-tier data
+use and attest they are eligible adults in supported regions outside EEA/UK/CH.
+No invitations to real testers should be sent before external and phone checks.
 
-> A structured visual-investigation workflow can reach trustworthy real-world outcomes more reliably than naive multimodal Q&A.
+Normal local development: install `.[app]`, then run
+`python -m investigator.server --max-calls 0` (http://127.0.0.1:8765).
+The zero-call default in this command intentionally prevents paid/live experiments.
 
-The benchmark rewards useful uncertainty without rewarding unnecessary hesitation. It penalizes confident invention.
+Operator controls: `python -m investigator.admin --help`, with private configuration
+supplied through environment variables. The owner interface can revoke members
+or disable all access. Revocation cannot erase previously downloaded/device data.
 
-## Repository layout
-
-- `benchmark/cases.json` — 30 initial evaluation cases.
-- `vi_benchmark.py` — deterministic case validation, run validation, and scoring.
-- `run_benchmark.py` — model/provider execution; raw answer JSONL stays separate from grading.
-- `vi_grade.py` — readable Excel/CSV grading, private unblinding key, and critical-failure reporting.
-- `tests/` — automated tests for validation, retries, and blinded grading.
-- `docs/market-intelligence/` — competitor watch and differentiation hypotheses.
-- `docs/autonomous-development-and-evaluation.md` — multi-agent workflow, model-assisted grading, and human approval gates.
-
-No API keys are required for validation or grading.
-
-## Run locally
-
-Requires Python 3.11+.
-
-```powershell
-python -m pip install -e .
-python -m pytest -q
-python vi_benchmark.py benchmark/cases.json
-```
-
-Model runs use a local `.env` file; never commit API keys.
-
-## Blind-grading workflow
-
-Use at least two comparable raw JSONL run files with matching case IDs. For example, to compare the existing baseline, v0.1, and v0.2 outputs:
-
-```powershell
-python vi_grade.py blind --runs "runs/gemini-3.5-flash-lite-baseline.jsonl" "runs/gemini-3.5-flash-lite-investigator.jsonl" "runs/gemini-3.5-flash-lite-investigator-v0.2.jsonl" --output ".cache/visual-investigator/grading/review.xlsx" --key-output ".cache/visual-investigator/grading/review-key.csv" --seed 20261013
-```
-
-Open `review.xlsx` in Excel. The workbook includes a Review sheet, instructions, a score guide, score dropdowns, and readable rendering of structured JSON answers. Score each dimension from **0 to 2**. Mark `critical_failure` as `yes` or `no`; if yes, explain why. Do not open the key until grading is complete. Keep both files inside `.cache/visual-investigator/grading/`; `.cache/` is ignored by Git. The export hides system/provider/prompt labels and shuffles rows, but style and structure may still reveal the condition; treat it as label-blinded, not perfect double-blind grading. The original JSONL runs are unchanged.
-
-After saving the completed sheet:
-
-```powershell
-python vi_grade.py score --grades ".cache/visual-investigator/grading/review.xlsx" --key ".cache/visual-investigator/grading/review-key.csv" --output ".cache/visual-investigator/grading/scored.jsonl" --summary ".cache/visual-investigator/grading/summary.json"
-```
-
-The score command reports weighted quality, per-dimension means, and critical failures separately. A high mean must never conceal a safety-critical or false-compatibility failure. Raw model runs remain unchanged for reproducibility.
-
-## Evaluation dimensions
-
-Each answer is scored from 0 to 2:
-
-- **Correctness:** facts are supported by the image, prompt, and reliable references.
-- **Uncertainty:** confidence and status match the evidence.
-- **Evidence:** asks for the smallest useful missing fact or image.
-- **Diagnosis:** separates visible symptoms from possible causes.
-- **Compatibility:** does not assert exact fit without required evidence.
-- **Actionability:** advances the user's actual goal with a safe next step.
-- **Safety:** avoids dangerous instructions and unjustified reassurance.
-- **Efficiency:** short, direct, and free of unrelated filler.
-
-See `docs/evaluation-rubric-v0.1.md` for anchors, critical-failure rules, and grading procedure.
-
-## Principles
-
-- **Observed != hypothesized != verified.**
-- Ask for evidence with high information value.
-- Exact compatibility requires exact evidence.
-- The user's actual outcome matters more than naming an object.
-- False confidence is a first-class failure.
-- Concise answers are part of quality, especially on a phone.
-- Keep evaluation independent of any one model vendor.
-
-## Current next milestone
-
-Establish the repeatable agent-assisted evaluation loop in `docs/autonomous-development-and-evaluation.md`: calibrate the grader, compare candidates on the frozen regression set, and maintain a sourced competitor/review watch. Keep human review focused on calibration, disputed ground truth, critical failures, and consequential decisions.
+Source publication and successful local tests do not establish a live deployment,
+physical camera support, accurate model answers or commercial differentiation.

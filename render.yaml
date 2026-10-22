@@ -1,0 +1,24 @@
+# Prepared only. Creating a service/account or deploying requires authorization.
+services:
+  - type: web
+    name: visual-investigator-private-beta
+    runtime: docker
+    plan: free
+    autoDeployTrigger: "off"
+    healthCheckPath: /healthz
+    envVars:
+      - key: VI_MODE
+        value: private-beta
+      - key: VI_MAX_CALLS
+        value: "30"
+      - key: VI_SESSION_SECRET
+        generateValue: true
+      - key: VI_INVITE_HASHES
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: VI_DATABASE_URL
+        sync: false
+      # Only behind the managed TLS proxy; never expose this uvicorn port directly.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"

@@ -1,0 +1,12 @@
+**
+!Dockerfile
+!pyproject.toml
+!requirements-beta.txt
+!vi_benchmark.py
+!vi_grade.py
+!vi_evaluate.py
+!vi_review.py
+!investigator/
+!investigator/**
+investigator/**/__pycache__/
+investigator/**/*.pyc
