@@ -1,5 +1,8 @@
 FROM python:3.13-slim@sha256:27b7c9d4f13ca20bb1170148f02095d50a5dfce1f7f2dabf5ca273727e43b7ea
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 VI_MODE=private-beta PORT=10000
+# psycopg's bundled libssl may have a different compiled default trust path.
+# Use Debian's CA bundle while retaining sslmode=verify-full in storage.py.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
 RUN useradd --uid 10001 --create-home investigator
 COPY requirements-beta.txt ./
