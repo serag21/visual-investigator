@@ -15,6 +15,27 @@ import time
 class StorageUnavailable(Exception):pass
 
 
+def unavailable(exc):
+    """Safe startup diagnostic, never the raw driver error or connection URI."""
+    message=str(exc).lower()
+    if any(x in message for x in ('certificate verify failed','root certificate','sslrootcert','certificate verification')):
+        category='tls_verification'
+    elif any(x in message for x in ('password authentication failed','authentication failed','sasl authentication')):
+        category='authentication_rejected'
+    elif any(x in message for x in ('timeout','timed out')):
+        category='connection_timeout'
+    elif any(x in message for x in ('permission denied','insufficient privilege')):
+        category='permission_denied'
+    elif any(x in message for x in ('could not translate host','network is unreachable','connection refused','name or service not known')):
+        category='network_unreachable'
+    elif any(x in message for x in ('invalid connection option','invalid connection string','invalid sslmode','missing "="')):
+        category='invalid_configuration'
+    else:category='database_unavailable'
+    error=StorageUnavailable('Durable storage is unavailable; no access or feedback was assumed.')
+    error.add_note('Storage diagnostic: '+category)
+    return error
+
+
 class Database:
     def __init__(self,target):
         self.postgres=str(target).startswith(('postgres://','postgresql://'))
@@ -34,9 +55,9 @@ class Database:
             except Exception:
                 connection.rollback();raise
             finally:connection.close()
-        except (sqlite3.Error,OSError) as exc:raise StorageUnavailable('Durable storage is unavailable; no access or feedback was assumed.') from None
+        except (sqlite3.Error,OSError) as exc:raise unavailable(exc) from None
         except Exception as exc:
-            if exc.__class__.__module__.startswith('psycopg'):raise StorageUnavailable('Durable storage is unavailable; no access or feedback was assumed.') from None
+            if exc.__class__.__module__.startswith('psycopg'):raise unavailable(exc) from None
             raise
 
 
