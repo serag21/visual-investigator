@@ -38,7 +38,7 @@
             <label class="consent"><input id="consent" type="checkbox"><span>Send my photos and question to Google Gemini. Google can use Free Tier content to improve its products; human reviewers may read it. Avoid private photos.</span></label>
             <button id="send" type="submit" class="button primary" disabled><span id="send-label">Investigate photo</span><span aria-hidden="true">↗</span></button>
           </form>
-          <p class="privacy-note">Photos stay in temporary server memory, not on disk. This session expires after 30 minutes of inactivity. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google’s data terms apply</a> to sent content.</p>
+          <p class="privacy-note">Photos stay in temporary server memory, not on disk. This session expires after 30 minutes of inactivity; hosting can restart sooner. Save explicitly on this device before leaving if you want to return. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer">Google’s data terms apply</a> to sent content.</p>
           <details class="device-panel"><summary>Save or resume on this device</summary><p class="small">Explicit saves include photos and conversation in this browser for 7 days. Anyone using this browser profile may access them. Nothing is saved automatically. Sign-out and invite revocation do not erase readable copies already saved here. Delete each save on shared devices. Keep up to five investigations.</p><button id="save-device" type="button" class="text-button">Save this investigation</button><div id="device-drafts"></div><p class="small">On iPhone: Share → Add to Home Screen. This does not make model analysis work offline.</p></details>
         </section>
       </aside>
@@ -59,7 +59,7 @@
         <section id="evidence-record" class="card evidence-record" hidden><div class="section-heading"><h2><span class="step">03</span> What we’re working with</h2><button id="export" class="text-button" type="button">Export record ↓</button></div><div id="facts"></div><p class="record-footnote">Image readings come from AI; measurements are what you reported. Neither is independently verified.</p></section>
       </section>
     </div>
-    <footer><span>VISUAL INVESTIGATOR</span><p>Useful evidence. Honest limits.</p><span>Private local session</span></footer>
+    <footer><span>VISUAL INVESTIGATOR</span><p>Useful evidence. Honest limits.</p><span>Temporary private session</span></footer>
   </main>
 </body>
 </html>
