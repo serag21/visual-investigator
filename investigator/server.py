@@ -443,7 +443,7 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
             session.references = None
             session.reference_requests = 0
             session.reports=[];session.decision_goal='general';session.rejected_answers=[];session.started=time.monotonic()
-            return {"ok": True}
+            return {"ok": True, **public(session)}
         finally:
             session.lock.release()
 

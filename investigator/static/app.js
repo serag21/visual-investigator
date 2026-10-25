@@ -228,7 +228,7 @@ $('question-form').addEventListener('submit', async event => {
 });
 $('new-case').addEventListener('click', async () => {
   try {
-    await api('/api/reset', {method:'POST', body:'{}'}); state = {turns:[],pictures:[]}; feedbackOffered=false;
+    state=await api('/api/reset', {method:'POST', body:'{}'}); feedbackOffered=false;
     $('question').value = ''; $('consent').checked = false; clearSelected(); notify(''); render(); window.scrollTo({top:0,behavior:'smooth'});
   } catch (error) { notify(error.message); }
 });

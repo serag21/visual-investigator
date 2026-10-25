@@ -2,6 +2,7 @@
 // Keep photos in this authenticated browsing context, including installed PWAs.
 let inspectedPicture=null, inspectedURL=null, inspectedBlob=null, feedbackDelivery=null, sharePreview=null, shareKey=null;
 let inspectionSequence=0;
+let feedbackLoadedCase=null;
 const workflowRender=render;
 render=function(){workflowRender();renderWorkflow();};
 function closeEvidence(){ inspectionSequence++;$('evidence-dialog').close(); if(inspectedURL)URL.revokeObjectURL(inspectedURL);inspectedURL=null;inspectedBlob=null;$('evidence-image').removeAttribute('src'); }
@@ -40,6 +41,7 @@ function renderWorkflow(){
     card.insertBefore(actions,$('research-record'));
   }
   renderDelivery();
+  if(memberInfo&&state.investigation_id&&feedbackLoadedCase!==state.investigation_id){feedbackLoadedCase=state.investigation_id;restoreDelivery();}
 }
 function renderDelivery(){
   if(feedbackDelivery?.delivery==='sent'&&feedbackDelivery.body.investigation_id!==state.investigation_id){feedbackDelivery=null;$('feedback-form').reset();}
@@ -75,7 +77,9 @@ $('feedback-form').addEventListener('submit',async event=>{
 $('feedback-retry').addEventListener('click',()=>deliverFeedback(true));
 $('feedback-new').addEventListener('click',()=>{feedbackDelivery=null;$('feedback-form').reset();renderDelivery();});
 async function restoreDelivery(){
-  try{const rows=(await DeviceStore.list(memberInfo.id)).filter(r=>r.kind==='feedback'&&r.body).sort((a,b)=>b.created.localeCompare(a.created));
+  const caseId=state.investigation_id,memberId=memberInfo.id,before=feedbackDelivery;
+  try{const rows=(await DeviceStore.list(memberId)).filter(r=>r.kind==='feedback'&&r.body).sort((a,b)=>b.created.localeCompare(a.created));
+    if(state.investigation_id!==caseId||memberInfo.id!==memberId||feedbackDelivery!==before)return;
     feedbackDelivery=rows.find(r=>r.delivery!=='sent')||rows.find(r=>r.body.investigation_id===state.investigation_id)||null;
     if(feedbackDelivery?.delivery==='pending')feedbackDelivery.delivery='uncertain';renderDelivery();
   }catch{/* Device storage is optional. */}
