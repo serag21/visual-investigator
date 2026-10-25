@@ -13,7 +13,7 @@ def checkpoint(access, owner, case, references, reports, goal='general',binding=
     pictures=[{**p.public(),'data':base64.b64encode(p.data).decode(),
                'target_data':base64.b64encode(p.target_data).decode() if p.target_data else None} for p in case.pictures]
     body={'version':1,'owner':owner,'binding':binding,'expires':int(time.time()+7*86400),'turns':case.turns,
-          'pictures':pictures,'references':references,'reports':reports,'decision_goal':goal}
+          'pictures':pictures,'references':references,'reports':reports,'decision_goal':goal,'investigation_id':case.id}
     token=access.sign('checkpoint',body)
     if len(token)>10_000_000:raise ValueError('This investigation is too large to save on device.')
     return {'token':token,'expires':body['expires'],'title':case.turns[-1]['finding']['title'] if case.turns else 'Investigation'}
@@ -32,8 +32,10 @@ def restore(access, owner, token,binding='local'):
             image.verify()
         target=base64.b64decode(p['target_data'],validate=True) if p['target_data'] else None
         if target and hashlib.sha256(target).hexdigest()!=p['target_sha256']:raise ValueError('Invalid saved crop')
-        pictures.append(Picture(p['id'],data,p['uploaded_sha256'],p['sent_sha256'],p['width'],p['height'],p['region'],target))
+        pictures.append(Picture(p['id'],data,p['uploaded_sha256'],p['sent_sha256'],p['width'],p['height'],p['region'],target,p.get('reused_from')))
     for turn in body['turns']:Finding.model_validate(turn['finding'])
     goal=body.get('decision_goal','general')
     if goal not in ('general','dc_adapter','filter','thread'):raise ValueError('Invalid saved goal')
-    return Investigation(turns=body['turns'],pictures=pictures),body['references'],body.get('reports',[]),goal
+    case=Investigation(turns=body['turns'],pictures=pictures)
+    if isinstance(body.get('investigation_id'),str) and len(body['investigation_id'])==32:case.id=body['investigation_id']
+    return case,body['references'],body.get('reports',[]),goal

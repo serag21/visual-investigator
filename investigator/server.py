@@ -12,6 +12,8 @@ import secrets
 import threading
 import time
 import json
+import io
+import uuid
 import os
 from pathlib import Path
 
@@ -20,19 +22,22 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from .engine import SYSTEM_PROMPT, Investigation, build_context, gate_finding, normalize_image, safe_finding, safety_trigger
-from .models import TurnInput, ImageInput, Specification
+from .engine import SYSTEM_PROMPT, Investigation, build_context, gate_finding, normalize_image, safe_finding, safety_trigger, focus_existing
+from .models import TurnInput, ImageInput, Specification, Finding
 from .provider import Gemini, ProviderError
 from .research import research
 from .access import Access
 from .continuity import checkpoint, restore
 from .feedback import FeedbackStore
+from .learning import LearningStore
+from .discovery import discover
 from .storage import Database, ControlStore, StorageUnavailable
 from .ledger import add_reports, decision_record, constrain_finding, capture_action, local_finding
 
 STATIC = Path(__file__).with_name("static")
 TTL = 1800
 PHOTO_MEMORY_LIMIT = 32_000_000  # encoded photos/crops across all sessions, excluding temporary decode buffers
+PROTOCOL='product-v0.4-owner-learning'
 
 
 @dataclass
@@ -64,6 +69,8 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
         feedback=FeedbackStore(control.db)
     else:
         feedback=FeedbackStore(feedback_path or os.environ.get('VI_FEEDBACK_PATH','.cache/visual-investigator/feedback.sqlite3'))
+    learning=LearningStore(feedback.db)
+    learning.prune()
     sessions: dict[str, Session] = {}
     calls = {"total": 0, "recent": []}
     budget_lock = threading.Lock()
@@ -73,6 +80,10 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
     model_slots = asyncio.Semaphore(2)
     image_slots = asyncio.Semaphore(1)
     upload_slots = asyncio.Semaphore(2)
+
+    def observe(kind,milliseconds=0):
+        try:learning.event(kind,milliseconds)
+        except StorageUnavailable:pass  # Metrics must never turn a successful operation into a failed receipt.
 
     def public(session):
         record=decision_record(session.decision_goal,session.reports) if enable_ledger else None
@@ -108,6 +119,8 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
             while True:
                 await asyncio.sleep(60)
                 expire()
+                try:await asyncio.to_thread(learning.prune)
+                except StorageUnavailable:pass
         task = asyncio.create_task(cleanup())
         yield
         task.cancel()
@@ -117,9 +130,11 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
     app.state.sessions = sessions
     app.state.provider_calls = calls
     app.state.control=control
+    app.state.learning=learning
 
     @app.middleware("http")
     async def privacy_and_origin(request: Request, call_next):
+        request.state.began=time.monotonic()
         host = request.url.hostname
         allowed = host in ("localhost", "127.0.0.1", "::1", "testserver")
         if not allowed and allow_lan:
@@ -137,13 +152,16 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
         if request.method in ("POST", "DELETE"):
             origin = request.headers.get("origin")
             expected = access.origin if access.beta else f"{request.url.scheme}://{request.url.netloc}"
-            if origin and origin != expected:
+            if (origin and origin != expected) or (request.url.path == '/api/logout' and origin != expected):
                 return JSONResponse({"error": "This request must come from the application."}, status_code=403)
-        try:member=None if request.url.path=='/healthz' else access.identify(request.cookies.get('__Host-vi_access'))
+        # Clearing this browser's cookies must work after memory expiry,
+        # revocation or a database outage. Logout grants no access and requires
+        # an explicit same-origin browser request even without a CSRF session.
+        try:member=None if request.url.path in ('/healthz','/api/logout') else access.identify(request.cookies.get('__Host-vi_access'))
         except StorageUnavailable:
             return JSONResponse({'error':'Private access storage is temporarily unavailable. Nothing was sent to the model.','category':'infrastructure'},status_code=503)
         request.state.member=member
-        if access.beta and not member and request.url.path.startswith('/api/') and request.url.path!='/api/access':
+        if access.beta and not member and request.url.path.startswith('/api/') and request.url.path not in ('/api/access','/api/logout'):
             return JSONResponse({'error':'Open your private invite to join this beta.'},status_code=401)
         if access.beta and member and request.method=='POST':
             now=time.monotonic();recent=member_requests.setdefault(member['id'],[])
@@ -157,7 +175,7 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
             async with upload_slots:response=await call_next(request)
         else:response = await call_next(request)
         sid = request.cookies.get("vi_session")
-        if sid in sessions:
+        if sid in sessions and request.url.path != '/api/logout':
             response.set_cookie("vi_session", sid, httponly=True, samesite="strict", secure=request.url.scheme == "https", max_age=TTL)
         return response
 
@@ -185,6 +203,9 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
 
     @app.exception_handler(ProviderError)
     async def provider_error(_, exc):
+        if _.url.path=='/api/turn':
+            observe('turn_'+str(exc.status) if exc.status in (429,502,503,504) else 'turn_request_error',
+                    (time.monotonic()-getattr(_.state,'began',time.monotonic()))*1000)
         return JSONResponse({"error": str(exc),'category':exc.category}, status_code=exc.status)
 
     @app.exception_handler(StorageUnavailable)
@@ -212,8 +233,12 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
 
     @app.post('/api/logout')
     async def logout(request:Request):
-        session=session_for(request,True)
-        sessions.pop(request.cookies.get('vi_session'),None)
+        sid=request.cookies.get('vi_session')
+        session=sessions.get(sid)
+        # Possession of the session cookie alone must not erase another case.
+        # If its CSRF token is stale/missing, leave memory to normal expiry.
+        if session and secrets.compare_digest(request.headers.get('x-csrf-token','').encode(),session.csrf.encode()):
+            sessions.pop(sid,None)
         response=JSONResponse({'ok':True});response.delete_cookie('__Host-vi_access',secure=True,httponly=True,samesite='strict')
         response.delete_cookie('vi_session');return response
 
@@ -229,7 +254,7 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
         session = sessions[sid]
         session.touched = time.monotonic()
         response = JSONResponse({"csrf": session.csrf, "provider": provider.name, "model": provider.model,
-            "model_ready": provider.ready(), "expires_in_seconds": TTL, "mode": "live" if isinstance(provider, Gemini) else "test",
+            "model_ready": provider.ready(), "expires_in_seconds": TTL, "mode": "live" if isinstance(provider, Gemini) else "test",'product_version':PROTOCOL,
             **public(session), 'member':{k:request.state.member[k] for k in ('id','role')},'private_beta':access.beta,'ledger_enabled':enable_ledger})
         response.set_cookie("vi_session", sid, httponly=True, samesite="strict", secure=request.url.scheme == "https", max_age=TTL)
         return response
@@ -248,7 +273,7 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
             value = TurnInput.model_validate_json(raw)
         except (ValidationError, ValueError):
             raise ProviderError("Check your question and choose a JPEG, PNG, or WebP photo under 6 MB.", 422) from None
-        if not value.question.strip() and value.image is None:
+        if not value.question.strip() and value.image is None and not value.reuse_picture_id:
             raise ProviderError("Add a photo or a question to continue.", 422)
         if not value.consent:
             raise ProviderError("Allow the photo and question to be sent to Gemini before investigating.", 400)
@@ -260,9 +285,16 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
                 raise ProviderError("This investigation has reached ten turns. Export the record and start a new one.", 409)
             if not case.pictures and value.image is None:
                 raise ProviderError("Add a photo to start the investigation.", 422)
-            if value.image is not None and len(case.pictures) >= 4:
-                raise ProviderError("This investigation already has four photos. Add a text observation or start another case.", 409)
+            if (value.image is not None or value.reuse_picture_id) and len(case.pictures) >= 4:
+                raise ProviderError("This investigation already has four evidence views. Add a text observation or start another case.", 409)
             pictures = list(case.pictures)
+            if value.reuse_picture_id:
+                original=next((p for p in case.pictures if p.id==value.reuse_picture_id),None)
+                if original is None:raise ProviderError('That photo is not in this investigation. Refresh and inspect the evidence again.',404)
+                if image_slots.locked():raise ProviderError('Another photo is being prepared.',409)
+                async with image_slots:
+                    picture=await asyncio.to_thread(focus_existing,original,value.region,f'P{len(pictures)+1}')
+                pictures.append(picture)
             if value.image is not None:
                 try:
                     if image_slots.locked():raise ProviderError('Another photo is being prepared. Try again shortly.',409)
@@ -324,11 +356,16 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
                     session.rejected_answers=(session.rejected_answers+[{'turn':text_id,'response':original,'reason':'invalid_evidence_citation'}])[-10:]
                     reason='evidence_recovery'
                 if enable_ledger:finding=constrain_finding(finding,decision_record(goal,session.reports))
+                from .engine import withhold_unchecked_model_mapping
+                finding,unchecked_mapping=withhold_unchecked_model_mapping(finding,all_text)
+                if unchecked_mapping:
+                    session.rejected_answers=(session.rejected_answers+[{'turn':text_id,'response':original,'reason':'unchecked_model_to_product_association'}])[-10:]
+                    reason='source_not_verified'
             # Commit only after a complete, validated answer. Failed turns leave context intact.
             check_photo_capacity(session,pictures)
-            record = {"id": text_id, "question": value.question, "picture_id": pictures[-1].id if value.image else None,
+            record = {"id": text_id, "question": value.question, "picture_id": pictures[-1].id if value.image or value.reuse_picture_id else None,
                       "finding": finding.model_dump(), "provider_called": called,
-                      "protocol_version": "product-v0.3-beta-evidence", "model": provider.model,
+                      "protocol_version": PROTOCOL, "model": provider.model,
                       "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest(),
                       "usage": {k: v for k, v in usage.items() if k in ("promptTokenCount", "candidatesTokenCount", "totalTokenCount")},
                       'capture_action':capture_action(finding.next_question)}
@@ -337,6 +374,20 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
             case.turns.append(record)
             session.decision_goal=goal
             session.touched = time.monotonic()
+            if value.research_consent and finding.status!='safety_stop' and session.reference_requests<6:
+                session.reference_requests+=1
+                try:
+                    session.references={**await asyncio.to_thread(discover,finding),'context_turn':text_id,'sources':[]}
+                    observe('source_lookup')
+                    if not any(c['status']=='retrieved' for c in session.references['candidates']):observe('source_failure')
+                except Exception:
+                    # An optional lookup must not discard a completed, billed answer.
+                    # Never surface a raw URL, request or network exception.
+                    session.references={'context_turn':text_id,'sources':[],'candidates':[],
+                        'verification':'Source lookup failed. The answer remains an unverified AI interpretation; no product or fit was verified.'}
+                    observe('source_failure')
+            observe('turn_recovery' if reason=='evidence_recovery' else 'turn_safety' if reason=='precautionary_safety_stop' else 'turn_ok',
+                    (time.monotonic()-request.state.began)*1000)
             return {**public(session), "provider": provider.name}
         finally:
             session.lock.release()
@@ -360,6 +411,7 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
     @app.post("/api/research")
     async def official_references(request: Request):
         session = session_for(request, True)
+        options=await bounded_json(request,200)
         if not session.lock.acquire(blocking=False):
             raise ProviderError("Wait for the current request before consulting references.", 409)
         try:
@@ -370,8 +422,13 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
             session.reference_requests += 1
             latest = session.case.turns[-1]
             query = " ".join(t["question"] for t in session.case.turns) + " " + latest["finding"]["title"] + " " + latest["finding"]["answer"]
-            result = await asyncio.to_thread(research, query)
+            if options.get('candidates'):
+                if options.get('consent') is not True:raise ProviderError('Choose to check proposed public product URLs first. No photo or conversation is sent to manufacturers.',400)
+                result=await asyncio.to_thread(discover,Finding.model_validate(latest['finding']))
+                result['sources']=[]
+            else:result = await asyncio.to_thread(research, query)
             session.references = {**result, "context_turn": latest["id"]}
+            observe('source_lookup')
             return session.references
         finally:
             session.lock.release()
@@ -451,21 +508,38 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
 
     @app.post('/api/feedback')
     async def submit_feedback(request:Request):
-        session=session_for(request,True);value=await bounded_json(request,4000)
-        if set(value)-{'outcome','note','share_reference','detail'}:raise ProviderError('Feedback accepts outcomes and optional notes, never photos or a conversation.',422)
+        session=session_for(request,True);value=await bounded_json(request,6000)
+        if set(value)-{'outcome','note','share_reference','detail','client_key','investigation_id'}:raise ProviderError('Feedback accepts outcomes and optional notes, never photos or a conversation.',422)
         if value.get('outcome') not in ('solved','helped_stuck','wrong','not_found'):raise ProviderError('Choose an outcome.',422)
         note=value.get('note','');reference=value.get('share_reference','')
         if not isinstance(note,str) or len(note)>1000 or not isinstance(reference,str) or len(reference)>80:raise ProviderError('Keep the optional note short.',422)
-        detail=value.get('detail')
+        key=value.get('client_key')
+        case_id=value.get('investigation_id',session.case.id)
+        try:
+            if key is not None:key=str(uuid.UUID(key))
+            if not isinstance(case_id,str) or len(case_id)!=32:raise ValueError()
+            int(case_id,16)
+        except (ValueError,TypeError,AttributeError):raise ProviderError('Invalid feedback receipt or investigation reference.',422) from None
+        detail=value.get('detail');submitted_detail=detail
         if detail is not None:
             allowed={'completion':('yes','no','unclear'),'source_usefulness':('helpful','unhelpful','unused'),
                      'unsupported_advice':('yes','no','unsure'),'infrastructure_problem':('yes','no','unsure')}
             if not isinstance(detail,dict) or any(k not in allowed or v not in allowed[k] for k,v in detail.items()):raise ProviderError('Choose the optional feedback details from the provided choices.',422)
             detail=detail|{'successful_turns':len(session.case.turns),'photos':len(session.case.pictures),'session_seconds':int(time.monotonic()-session.started),
                           'correctly_unresolved':'requires voluntary evidence review','verification':'user_report_only'}
-        try:identity=feedback.add(session.owner,value['outcome'],note,reference,detail)
-        except ValueError:raise ProviderError('Feedback could not be saved; keep your downloaded copy.',503) from None
+        digest=hashlib.sha256(json.dumps([value['outcome'],note,reference,submitted_detail,case_id],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        try:identity=feedback.add(session.owner,value['outcome'],note,reference,detail,key,digest,case_id)
+        except ValueError as exc:raise ProviderError(str(exc),409 if 'receipt' in str(exc) else 503) from None
+        observe('feedback_received')
         return {'id':identity,'saved':True,'notice':'Your chosen outcome and note were saved for 14 days. Photos/conversation were not collected. This is your reported experience, not independent verification.'}
+
+    @app.get('/api/feedback/receipt/{client_key}')
+    def feedback_receipt(client_key:str,request:Request):
+        try:key=str(uuid.UUID(client_key))
+        except ValueError:raise ProviderError('Invalid receipt key.',422) from None
+        found=feedback.receipt(request.state.member['id'],key)
+        if not found:raise ProviderError('No confirmed receipt yet. Retrying the same submission is safe.',404)
+        return found
 
     @app.get('/api/feedback/export')
     def export_feedback(request:Request):
@@ -477,7 +551,68 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
     def owner_report(request:Request):
         session_for(request)
         if request.state.member['role']!='owner':raise ProviderError('Only the beta owner can review feedback.',403)
-        return feedback.summary() | {'members':control.members() if control else [],'beta_enabled':control.enabled() if control else True}
+        return feedback.summary() | {'members':control.members() if control else [],'beta_enabled':control.enabled() if control else True,
+            'operations':learning.operations(),'shared_cases':learning.list(),'operation_limitations':'Aggregate request/status counts and server time, not verified task success or full cold-start timing.'}
+
+    @app.post('/api/shares/preview')
+    async def preview_share(request:Request):
+        session=session_for(request,True);value=await bounded_json(request,200)
+        if set(value)-{'photos'} or not isinstance(value.get('photos',False),bool):raise ProviderError('Choose whether to include small photos.',422)
+        if not session.lock.acquire(blocking=False):raise ProviderError('Wait for the current answer.',409)
+        try:
+            payload={'investigation_id':session.case.id,'product_version':PROTOCOL,'verification':'Unverified user-shared case; not ground truth',
+                     'turns':session.case.turns[-2:],'photos':[],'references':session.references,'consent':{'scope':'private beta debugging only','photos':value.get('photos',False),'retention_days':7}}
+            if value.get('photos'):
+                if image_slots.locked():raise ProviderError('Another image is being prepared.',409)
+                def thumbnails():
+                    from PIL import Image
+                    seen=set();photos=[]
+                    for picture in reversed(session.case.pictures):
+                        if picture.sent_sha256 in seen:continue
+                        seen.add(picture.sent_sha256)
+                        with Image.open(io.BytesIO(picture.data)) as im:
+                            im.thumbnail((640,640));out=io.BytesIO();im.save(out,'JPEG',quality=60)
+                            if len(out.getvalue())>80000:
+                                im.thumbnail((480,480));out=io.BytesIO();im.save(out,'JPEG',quality=50)
+                            if len(out.getvalue())>80000:raise ValueError('Photo preview is too large; share text only.')
+                        photos.append({'id':picture.id,'data':base64.b64encode(out.getvalue()).decode(),'mime_type':'image/jpeg','sha256':hashlib.sha256(out.getvalue()).hexdigest()})
+                        if len(photos)==2:break
+                    return photos
+                async with image_slots:payload['photos']=await asyncio.to_thread(thumbnails)
+            token=access.sign('share-preview',{'owner':session.owner,'binding':session.binding,'expires':time.time()+600,'payload':payload})
+            if len(token)>750000:raise ValueError('Preview is too large; share fewer details.')
+            return {'preview':payload,'token':token,'notice':'Nothing shared yet. Review these two latest turns and any selected small photos. Only confirming sends this preview to private owner review for seven days; it is not end-to-end encrypted.'}
+        except ValueError as exc:raise ProviderError(str(exc),422) from None
+        finally:session.lock.release()
+
+    @app.post('/api/shares')
+    async def submit_share(request:Request):
+        session=session_for(request,True);value=await bounded_json(request,800000)
+        if set(value)-{'token','consent','client_key'} or value.get('consent') is not True:raise ProviderError('Explicitly confirm the reviewed preview.',400)
+        try:
+            body=access.verify('share-preview',value.get('token',''),750000)
+            if body['owner']!=session.owner or body['binding']!=session.binding:raise ValueError('This preview belongs to another invitation.')
+            key=str(uuid.UUID(value.get('client_key','')))
+            return learning.add(session.owner,session.binding,key,body['payload'])
+        except (ValueError,KeyError,TypeError,AttributeError) as exc:raise ProviderError('Share not confirmed: '+str(exc)[:160],422) from None
+
+    @app.get('/api/shares')
+    def list_shares(request:Request):
+        m=request.state.member
+        return {'cases':learning.list() if m['role']=='owner' else learning.list(m['id'],m.get('binding','local')),'retention_days':7}
+
+    @app.get('/api/shares/{identity}')
+    def get_share(identity:str,request:Request):
+        m=request.state.member
+        result=learning.get(identity) if m['role']=='owner' else learning.get(identity,m['id'],m.get('binding','local'))
+        if result is None:raise ProviderError('This shared case is unavailable or expired.',404)
+        return result
+
+    @app.delete('/api/shares/{identity}')
+    def delete_share(identity:str,request:Request):
+        session_for(request,True);m=request.state.member
+        removed=learning.delete(identity) if m['role']=='owner' else learning.delete(identity,m['id'],m.get('binding','local'))
+        return {'deleted':removed,'notice':'Removed from active owner review; database backups can retain older copies.'}
 
     @app.post('/api/owner/access')
     async def owner_access(request:Request):

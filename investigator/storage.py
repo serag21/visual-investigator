@@ -1,6 +1,8 @@
 """Small durable control store. SQLite locally, TLS PostgreSQL on ephemeral hosts.
 
-Never stores photos, prompts or model answers. Transactions protect quota and
+Control tables never store photos, prompts or model answers. A separate opt-in
+LearningStore can retain explicitly previewed private shares for seven days.
+Transactions protect quota and
 revocation across processes. Configuration URLs are never included in errors.
 """
 from contextlib import contextmanager

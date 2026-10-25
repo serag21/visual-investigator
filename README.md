@@ -13,7 +13,9 @@ workspace has no payment method and both services remain on Free before creation
 The activation process limits real provider checks separately; the configuration
 request ceiling is an abuse control, not a billing guarantee.
 
-Photos/context stay in process memory until expiry or restart; explicit browser
+Photos/context stay in process memory until expiry or restart, except explicit
+seven-day private review shares. Aggregate operational counters contain no photo
+or question content. Explicit browser
 saves are readable, not encrypted. Users must consent to Gemini unpaid-tier data
 use and attest they are eligible adults in supported regions outside EEA/UK/CH.
 No invitations to real testers should be sent before external and phone checks.

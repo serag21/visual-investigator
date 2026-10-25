@@ -28,6 +28,13 @@ class Compatibility(Contract):
     constraints: list[Constraint] = Field(max_length=10)
 
 
+class Candidate(Contract):
+    name: str = Field(min_length=3,max_length=120)
+    manufacturer_url: str = Field(min_length=8,max_length=350)
+    why_plausible: str = Field(min_length=1,max_length=220)
+    distinguishing_evidence: str = Field(min_length=1,max_length=220)
+
+
 class Finding(Contract):
     title: str = Field(min_length=1, max_length=80)
     answer: str = Field(min_length=1, max_length=900)
@@ -39,6 +46,14 @@ class Finding(Contract):
     next_action: str = Field(max_length=350)
     risk: Literal["ordinary", "caution", "hazard"]
     compatibility: Compatibility
+    suggested_questions: list[str] = Field(default_factory=list,max_length=3)
+    candidate_hypotheses: list[Candidate] = Field(default_factory=list,max_length=3)
+
+    @model_validator(mode='after')
+    def short_suggestions(self):
+        if any(not q.strip() or len(q)>100 for q in self.suggested_questions):
+            raise ValueError('Follow-up suggestions must be short questions.')
+        return self
 
 
 class Region(Contract):
@@ -66,6 +81,15 @@ class TurnInput(Contract):
     image: ImageInput | None = None
     consent: bool = False
     decision_goal: Literal['general','dc_adapter','filter','thread'] = 'general'
+    reuse_picture_id: str | None = Field(default=None,pattern=r'^P[1-4]$')
+    region: Region | None = None
+    research_consent: bool = False
+
+    @model_validator(mode='after')
+    def one_photo_source(self):
+        if self.image and self.reuse_picture_id:raise ValueError('Choose an upload or an existing photo, not both.')
+        if self.region and not self.reuse_picture_id:raise ValueError('An existing-photo region needs its photo ID.')
+        return self
 
 
 class Specification(Contract):

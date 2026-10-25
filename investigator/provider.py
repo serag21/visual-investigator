@@ -23,6 +23,35 @@ def configured_key() -> str | None:
     return os.environ.get("GEMINI_API_KEY") or dotenv_values(Path(__file__).resolve().parents[1] / ".env").get("GEMINI_API_KEY")
 
 
+def generation_schema():
+    """Keep validation local; avoid combinatorial bounded-array decoding grammars.
+
+    Google documents 400s from nested maxItems and long optional-property runs.
+    Stored old Findings remain compatible; new requests always ask for both lists.
+    """
+    def simplify(value):
+        if isinstance(value,list):return [simplify(v) for v in value]
+        if not isinstance(value,dict):return value
+        result={k:({name:simplify(schema) for name,schema in v.items()} if k in ('properties','$defs') else simplify(v))
+                for k,v in value.items() if k not in ('minItems','maxItems','minLength','maxLength','title')}
+        if 'properties' in result:result['required']=list(result['properties'])
+        return result
+    return simplify(Finding.model_json_schema())
+
+
+def rejection_category(exc):
+    """Read only bounded error JSON; return a fixed label, never provider content."""
+    try:
+        error=json.loads(exc.read(16000)).get('error',{})
+        message=str(error.get('message','')).lower()
+        if any(w in message for w in ('billing','paid tier','payment')):return 'billing'
+        if any(w in message for w in ('quota','resource_exhausted','rate limit')):return 'quota'
+        if any(w in message for w in ('schema','constraint','too many states','responsejsonschema')):return 'schema'
+        if any(w in message for w in ('api key','permission','region','not available in your')):return 'access'
+    except (ValueError,TypeError,AttributeError,OSError):pass
+    return 'configuration'
+
+
 class Gemini:
     name = "Google Gemini"
     model = "gemini-3.5-flash-lite"
@@ -46,16 +75,21 @@ class Gemini:
         if not key:
             raise ProviderError("Gemini is not configured on this server.", 503)
         parts = [{"text": context}]
+        sent={}
         for picture in pictures:
-            parts.extend([{"text": f"Photo evidence {picture.id}:"},
-                          {"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(picture.data).decode()}}])
+            if picture.sent_sha256 in sent:
+                parts.append({'text':f'Photo evidence {picture.id} reuses the full photograph {sent[picture.sent_sha256]}; the selected view below is new evidence.'})
+            else:
+                sent[picture.sent_sha256]=picture.id
+                parts.extend([{"text": f"Photo evidence {picture.id}:"},
+                              {"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(picture.data).decode()}}])
             if picture.target_data:
                 parts.extend([{"text": f"Selected target {picture.id}:target; prioritize this area. Full photo is context."},
                               {"inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(picture.target_data).decode()}}])
         prompt = SYSTEM_PROMPT if structured else "Answer the user's visual question accurately and concisely. If evidence is insufficient, explain what is missing and give a useful next step. Do not invent facts. If no question is given, identify the likely subject or ask what the user means."
         config = {"maxOutputTokens": 2400, "temperature": 0.2}
         if structured:
-            config.update(responseMimeType="application/json", responseJsonSchema=Finding.model_json_schema())
+            config.update(responseMimeType="application/json", responseJsonSchema=generation_schema())
         payload = {"systemInstruction": {"parts": [{"text": prompt}]}, "contents": [{"role": "user", "parts": parts}], "generationConfig": config}
         request = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
             data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key}, method="POST")
@@ -69,7 +103,8 @@ class Gemini:
                 # Region/billing preconditions may be HTTP 400, not only 403.
                 # Surface no provider body/URL and let the durable beta pause
                 # prevent another request until an operator reviews configuration.
-                raise ProviderError(f"Gemini rejected server access or request configuration (HTTP {exc.code}). Your investigation is unchanged; server configuration needs review before another attempt.", 503) from None
+                category=rejection_category(exc)
+                raise ProviderError(f"Gemini rejected server access or request configuration (HTTP {exc.code}; {category}). Your investigation is unchanged; server configuration needs review before another attempt.", 503) from None
             raise ProviderError(f"Gemini could not complete this request (HTTP {exc.code}). Your investigation is unchanged.") from None
         except (urllib.error.URLError, TimeoutError, OSError):
             raise ProviderError("Gemini did not respond in time. Your investigation is unchanged. You can try again.", 504) from None

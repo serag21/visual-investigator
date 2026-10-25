@@ -10,7 +10,7 @@ function showRequirement(){requirementLabel.hidden=$('spec-subject').value!=='or
 function downloadObject(value,name){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));const link=element('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function renderEnhancements(){
   const latest=state.turns.at(-1);
-  $('feedback-record').hidden=!latest;$('spec-record').hidden=!ledgerEnabled||(!latest&&!selected);
+  $('feedback-record').hidden=!latest&&!feedbackOffered;$('spec-record').hidden=!ledgerEnabled||(!latest&&!selected);
   $('logout').hidden=!privateBeta;
   $('owner-feedback').hidden=memberInfo?.role!=='owner';$('owner-review').hidden=memberInfo?.role!=='owner';
   $('reported-specs').replaceChildren();
@@ -60,19 +60,10 @@ $('save-device').addEventListener('click',async()=>{
     await DeviceStore.put({...saved,id:crypto.randomUUID(),member:memberInfo.id,kind:'draft',expires:saved.expires*1000});await refreshDrafts();notify('Saved on this device for seven days, including photos. Not uploaded to an analytics service.');
   }catch(error){notify(error.message);}finally{busy=false;updateButton();}
 });
-$('feedback-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(busy)return;busy=true;updateButton();
-  const entry={id:crypto.randomUUID(),kind:'feedback',member:memberInfo.id,created:new Date().toISOString(),expires:Date.now()+14*86400000,outcome:$('feedback-outcome').value,note:$('feedback-note').value};
-  if($('feedback-detail-consent').checked)entry.detail={completion:$('feedback-completion').value,source_usefulness:$('feedback-sources').value,unsupported_advice:$('feedback-unsupported').value,infrastructure_problem:$('feedback-infrastructure').value};
-  try{await DeviceStore.put(entry);const result=await api('/api/feedback',{method:'POST',body:JSON.stringify({outcome:entry.outcome,note:entry.note,...(entry.detail?{detail:entry.detail}:{})})});entry.receipt=result.id;await DeviceStore.put(entry);notify(result.notice);}
-  catch(error){notify(`${error.message} Your device feedback copy is retained when storage is available.`);}finally{busy=false;updateButton();}
-});
 $('download-feedback').addEventListener('click',async()=>{try{downloadObject({feedback:(await DeviceStore.list(memberInfo.id)).filter(row=>row.kind==='feedback'),verification:'Tester-reported outcomes, not independent task verification.'},'my-investigator-feedback.json');}catch(error){notify(error.message);}});
 $('share-case').addEventListener('click',async()=>{if(!$('share-consent').checked){notify('Choose explicitly whether to include the photos and conversation.');return;}try{const record=await api('/api/share-case',{method:'POST',body:'{"consent":true}'});downloadObject(record,'private-case-evidence.json');notify('Case file downloaded locally. Review it before voluntarily sharing it.');}catch(error){notify(error.message);}});
 $('owner-feedback').addEventListener('click',async()=>{try{downloadObject(await api('/api/feedback/export'),'submitted-beta-feedback.json');}catch(error){notify(error.message);}});
 $('logout').addEventListener('click',async()=>{try{await api('/api/logout',{method:'POST',body:'{}'});location.replace('/');}catch(error){notify(error.message);}});
-window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;$('install').hidden=false;});
-$('install').addEventListener('click',async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;$('install').hidden=true;}});
 window.addEventListener('vi-ready',()=>{renderEnhancements();refreshDrafts();});
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='127.0.0.1'||location.hostname==='localhost'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
 if(memberInfo){renderEnhancements();refreshDrafts();}
@@ -82,6 +73,9 @@ $('owner-review').addEventListener('click',async()=>{
  panel.append(element('p',Object.entries(report.reported_outcomes).map(([k,v])=>`${k.replaceAll('_',' ')}: ${v}`).join(' · ')));
  panel.append(element('p',`${report.responding_members} responding members · ${report.members_with_multiple_submissions} with multiple submissions (not verified repeat usage)`,'small'));
  for(const limitation of report.limitations)panel.append(element('p',limitation,'small muted'));
+ panel.append(element('p',report.operation_limitations||'Operational counts are not task completion.','small muted'));
+ for(const row of report.operations||[])panel.append(element('p',`${new Date(row.utc_day*86400000).toISOString().slice(0,10)} UTC · ${row.kind.replaceAll('_',' ')}: ${row.requests} requests · ${Math.round(row.total_server_ms/1000)}s total server time`,'small'));
+ if((report.shared_cases||[]).length){const review=element('button',`Review ${report.shared_cases.length} voluntarily shared cases`,'text-button');review.type='button';review.addEventListener('click',async()=>{$('private-share').hidden=false;await refreshShares();$('private-share').scrollIntoView({behavior:'smooth',block:'start'});});panel.append(review);}
  for(const row of report.feedback){const card=element('div',undefined,'owner-feedback-entry');card.append(element('strong',`${row.member} · ${row.outcome.replaceAll('_',' ')}`),element('p',row.note||'No optional note'));if(row.optional_detail){const d=row.optional_detail;card.append(element('p',`Task completion: ${d.completion||'not reported'} · Sources: ${d.source_usefulness||'not reported'} · Unsupported advice: ${d.unsupported_advice||'not reported'} · Service problem: ${d.infrastructure_problem||'not reported'}`,'small'),element('p',`${d.successful_turns} recorded turns · ${d.photos} photos (including restored history). ${d.session_seconds}s since this session began or was restored; includes idle time.`,'small muted'));}panel.append(card);}
  for(const member of report.members){if(member.id===memberInfo.id)continue;const button=element('button',`${member.revoked?'Revoked':'Revoke invite'}: ${member.id}`,'text-button');button.disabled=member.revoked;button.addEventListener('click',async()=>{if(!confirm(`Revoke ${member.id}? Previously saved device copies cannot be remotely erased.`))return;try{await api('/api/owner/access',{method:'POST',body:JSON.stringify({revoke:member.id})});button.disabled=true;button.textContent=`Revoked: ${member.id}`;}catch(error){notify(error.message);}});panel.append(button);}
  if(privateBeta){const disable=element('button','Disable all beta access','text-button');disable.addEventListener('click',async()=>{if(!confirm('Disable access for everyone, including you? Re-enabling requires the private host operator command.'))return;try{await api('/api/owner/access',{method:'POST',body:'{"disable":true}'});location.replace('/');}catch(error){notify(error.message);}});panel.append(disable);}

@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 let csrf = '', state = {turns: [], pictures: []}, selected = null, busy = false, ready = false;
 let selectionMode = false, anchor = null;
-let memberInfo=null, privateBeta=false, ledgerEnabled=false;
+let memberInfo=null, privateBeta=false, ledgerEnabled=false, feedbackOffered=false;
 const statusLabels = {answered: 'Answer supported so far', needs_evidence: 'More evidence needed', concluded: 'Useful conclusion', safety_stop: 'Pause · safety concern'};
 const decisions = {unverified: 'Unverified', mismatch: 'Conflict found', requirements_identified: 'Requirements identified'};
 function element(tag, text, className) {
@@ -31,6 +31,7 @@ async function api(path, options = {}) {
 }
 function clearSelected() {
   selectionMode = false; anchor = null; $('target-actions').hidden = true; $('selector').classList.remove('selecting'); $('target-box').setAttribute('width','0');
+  if(selected?.preview_url)URL.revokeObjectURL(selected.preview_url);
   selected = null; $('preview').removeAttribute('src');
   $('pending-photo').hidden = true; $('upload-empty').hidden = false;
   $('upload').value = ''; $('camera').value = ''; updateButton();
@@ -61,13 +62,17 @@ async function choosePhoto(file) {
   updateButton();
 }
 function render() {
+  // There is one composer and one reference panel. Detach before replacing cards.
+  $('composer-home').append($('question-form'));
+  $('reference-home').append($('research-record'));
   document.body.classList.toggle('has-turns', state.turns.length > 0);
   $('welcome').hidden = state.turns.length > 0;
   $('examples').hidden = state.turns.length > 0;
   $('photo-count').textContent = state.pictures.length ? `${state.pictures.length} of 4 photos` : 'Start with one photo';
   $('photo-strip').replaceChildren();
   for (const picture of state.pictures) {
-    const link = element('a'); link.href = picture.url; link.target = '_blank'; link.rel = 'noopener';
+    const link = element('button'); link.type='button';link.className='photo-inspect';
+    link.addEventListener('click',()=>inspectEvidence(picture));
     const img = element('img'); img.src = picture.url; img.alt = `Evidence photo ${picture.id}`;
     link.append(img, element('span', picture.id)); $('photo-strip').append(link);
   }
@@ -95,6 +100,8 @@ function render() {
     $('conversation').append(card);
   }
   const latest = state.turns.at(-1)?.finding;
+  if(latest){$('conversation').lastElementChild.append($('research-record'),$('question-form'));$('question-label').textContent='Ask a follow-up';$('question').placeholder='Ask about this object, add a measurement, or tell me what changed.';}
+  else{$('question-label').textContent='What would you like to find out? (optional with a photo)';}
   $('research-record').hidden = !latest;
   renderReferences();
   $('evidence-record').hidden = !latest;
@@ -131,12 +138,21 @@ function render() {
   }
 }
 function renderReferences() {
-  const holder=$('references'); holder.replaceChildren();
+  const holder=$('references'); holder.replaceChildren();$('reference-options').open=!!state.references;
   if (!state.references) return;
   holder.append(element('p',`References consulted for ${state.references.context_turn}. Recheck relevance after adding evidence.`,'small muted'));
   holder.append(element('p',state.references.verification,'record-footnote'));
-  if (!state.references.sources.length) holder.append(element('p','This source library has no relevant entry yet. No search or product match was established.'));
-  for (const source of state.references.sources) {
+  for(const candidate of state.references.candidates||[]){
+    if(candidate.status!=='retrieved'){holder.append(element('p',`A proposed reference could not be checked (${candidate.status.replaceAll('_',' ')}). No source or match is verified.`,'small muted'));continue;}
+    const card=element('div',undefined,'reference-source');card.append(element('strong','Possible product family · not an identification'),element('p',candidate.hypothesis,'small'));
+    const link=element('a',candidate.title);link.href=candidate.url;link.target='_blank';link.rel='noopener noreferrer';card.append(link,element('p','Manufacturer page retrieved; pictured identity and compatibility remain unverified.','small'),element('p','To distinguish it: '+candidate.distinguishing_evidence,'small'));
+    const details=element('details');details.append(element('summary','Source receipt'),element('p',candidate.excerpt),element('p',`${candidate.publisher} · ${candidate.retrieved_at} · SHA-256 ${candidate.document_sha256}`,'small'));card.append(details);holder.append(card);
+  }
+  if(state.references.coverage)holder.append(element('p',state.references.coverage,'small muted'));
+  for(const site of state.references.brand_sites||[]){const a=element('a',site.brand+' manufacturer site ↗');a.href=site.url;a.target='_blank';a.rel='noopener noreferrer';holder.append(a,element('p','Manufacturer homepage, not a checked product match.','small muted'));}
+  if(state.references.search_handoff){const a=element('a',state.references.search_handoff.label+' ↗');a.href=state.references.search_handoff.url;a.target='_blank';a.rel='noopener noreferrer';holder.append(a,element('p','This opens an external search. The app has not searched those results.','small muted'));}
+  if (!(state.references.sources||[]).length&&!(state.references.candidates||[]).length) holder.append(element('p','No checked product reference yet. Use a manufacturer link or an external search; no product match was established.'));
+  for (const source of state.references.sources||[]) {
     const card=element('div',undefined,'reference-source'), link=element('a',`${source.publisher} · ${source.title}`);
     link.href=source.url; link.target='_blank'; link.rel='noopener noreferrer';
     card.append(link,element('p',`${source.kind} · ${source.status==='retrieved'?'Fetched document excerpt':'Document not retrieved'}`,'small muted'));
@@ -147,9 +163,9 @@ function renderReferences() {
 }
 $('research').addEventListener('click',async()=>{
   if(busy)return; busy=true;updateButton();$('research').textContent='Fetching references…';
-  try{state.references=await api('/api/research',{method:'POST',body:'{}'});renderReferences();}
+  try{state.references=await api('/api/research',{method:'POST',body:JSON.stringify({candidates:true,consent:true})});renderReferences();}
   catch(error){notify(error.message);}
-  finally{busy=false;$('research').textContent='Refresh references ↗';updateButton();}
+  finally{busy=false;$('research').textContent='Check official product leads';updateButton();}
 });
 $('upload-button').addEventListener('click', () => $('upload').click());
 $('camera-button').addEventListener('click', () => $('camera').click());
@@ -202,15 +218,17 @@ $('question-form').addEventListener('submit', async event => {
   event.preventDefault(); if ($('send').disabled) return;
   busy = true; updateButton(); notify(''); $('loading').hidden = false;
   try {
-    state = await api('/api/turn', {method:'POST', body: JSON.stringify({question:$('question').value, image:selected, consent:$('consent').checked})});
+    state = await api('/api/turn', {method:'POST', body: JSON.stringify({question:$('question').value, image:selected?.reuse_picture_id?null:selected,
+      reuse_picture_id:selected?.reuse_picture_id||null,region:selected?.reuse_picture_id?selected.region:null,
+      research_consent:$('reference-consent').checked,consent:$('consent').checked})});
     $('question').value = ''; clearSelected(); render();
     $('conversation').lastElementChild?.scrollIntoView({behavior:'smooth',block:'start'});
-  } catch (error) { notify(error.message); $('notice').scrollIntoView({behavior:'smooth',block:'center'}); }
+  } catch (error) { feedbackOffered=true; render(); notify(error.message); $('notice').scrollIntoView({behavior:'smooth',block:'center'}); }
   finally { busy = false; $('loading').hidden = true; updateButton(); }
 });
 $('new-case').addEventListener('click', async () => {
   try {
-    await api('/api/reset', {method:'POST', body:'{}'}); state = {turns:[],pictures:[]};
+    await api('/api/reset', {method:'POST', body:'{}'}); state = {turns:[],pictures:[]}; feedbackOffered=false;
     $('question').value = ''; $('consent').checked = false; clearSelected(); notify(''); render(); window.scrollTo({top:0,behavior:'smooth'});
   } catch (error) { notify(error.message); }
 });
