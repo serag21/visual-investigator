@@ -22,10 +22,17 @@ function updateButton() {
   $('research').disabled = busy;
   for(const id of ['save-device','share-case'])$(id).disabled=busy;
 }
+function showUsage(usage){
+  const node=$('usage-status');if(!node||!usage)return;
+  const reset=new Date(usage.resets_at*1000).toLocaleString();
+  node.textContent=usage.provider_paused?'Model access is paused after a provider problem. Your photos and feedback remain available.':
+    `${usage.remaining} analysis attempts available today (your limit ${usage.member_limit}; shared beta limit ${usage.shared_limit}). Resets ${reset}. Failed attempts count; shared availability can change.`;
+}
 async function api(path, options = {}) {
   const response = await fetch(path, {...options, headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...options.headers}});
   let data;
   try { data = await response.json(); } catch { throw new Error('The service did not return a readable answer. It may be waking up; your evidence is still here.'); }
+  showUsage(data.usage);
   if (!response.ok) throw new Error((data.category==='infrastructure'?'Service problem: ':data.category==='answer_format'?'Answer format problem: ':'')+(data.error || 'That request could not be completed. Your evidence is still here.'));
   return data;
 }

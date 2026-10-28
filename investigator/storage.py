@@ -104,6 +104,17 @@ class ControlStore:
         with self.db.connect() as q:
             return [{'id':r[0],'role':r[1],'expires':r[2],'revoked':bool(r[3])} for r in q.execute('SELECT id,role,expires,revoked FROM beta_members ORDER BY id')]
 
+    def usage(self,member,global_limit=30,member_limit=20):
+        day=int(time.time()//86400)
+        with self.db.connect() as q:
+            rows=dict(q.execute('SELECT member,attempts FROM beta_quota WHERE day=? AND member IN (?,?)',(day,'*',member)))
+            paused=q.execute("SELECT value FROM beta_settings WHERE name='provider_paused'").fetchone()
+        own=max(0,member_limit-rows.get(member,0));shared=max(0,global_limit-rows.get('*',0))
+        return {'remaining':min(own,shared),'member_remaining':own,'shared_remaining':shared,
+                'member_limit':member_limit,'shared_limit':global_limit,'resets_at':(day+1)*86400,
+                'provider_paused':bool(paused and paused[0]=='1'),
+                'basis':'Reserved model attempts, including failed attempts; shared availability can change.'}
+
     def reserve(self,member,global_limit=30,member_limit=20):
         day=int(time.time()//86400)
         with self.db.connect() as q:
@@ -113,7 +124,7 @@ class ControlStore:
             for identity,limit in (('*',global_limit),(member,member_limit)):
                 q.execute('INSERT INTO beta_quota VALUES (?,?,0) ON CONFLICT(member,day) DO NOTHING',(identity,day))
                 result=q.execute('UPDATE beta_quota SET attempts=attempts+1 WHERE member=? AND day=? AND attempts<? RETURNING attempts',(identity,day,limit)).fetchone()
-                if not result:raise ValueError('The daily beta model allowance is used. No new request was sent.')
+                if not result:raise ValueError("Today's beta allowance is used. It resets at 00:00 UTC. Your evidence is unchanged; no new request was sent.")
             q.execute('DELETE FROM beta_quota WHERE day<?',(day-30,))
 
     def pause_provider(self):

@@ -56,7 +56,9 @@ class Session:
     started: float = field(default_factory=time.monotonic)
 
 
-def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, access=None, enable_ledger=True, feedback_path=None, control=None) -> FastAPI:
+def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, access=None, enable_ledger=True, feedback_path=None, control=None, daily_global=30, daily_member=20) -> FastAPI:
+    if not (1<=daily_global<=30 and 1<=daily_member<=20):
+        raise ValueError('Daily safeguards must stay within 30 global / 20 per member.')
     provider = provider or Gemini()
     access = access or Access.configured()
     if access.beta:
@@ -88,6 +90,7 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
     def public(session):
         record=decision_record(session.decision_goal,session.reports) if enable_ledger else None
         return {**session.case.public(),'references':session.references,'reports':session.reports,
+                'usage':control.usage(session.owner,daily_global,daily_member) if control else None,
                 'decision_goal':session.decision_goal,'reported_decision':record}
 
     async def bounded_json(request,maximum=8000):
@@ -206,7 +209,12 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
         if _.url.path=='/api/turn':
             observe('turn_'+str(exc.status) if exc.status in (429,502,503,504) else 'turn_request_error',
                     (time.monotonic()-getattr(_.state,'began',time.monotonic()))*1000)
-        return JSONResponse({"error": str(exc),'category':exc.category}, status_code=exc.status)
+        body={"error": str(exc),'category':exc.category}
+        member=getattr(_.state,'member',None)
+        if control and member:
+            try:body['usage']=control.usage(member['id'],daily_global,daily_member)
+            except StorageUnavailable:pass
+        return JSONResponse(body, status_code=exc.status)
 
     @app.exception_handler(StorageUnavailable)
     async def storage_error(_,exc):
@@ -332,12 +340,15 @@ def create_app(provider=None, max_calls: int = 30, allow_lan: bool = False, acce
                 with budget_lock:
                     now = time.monotonic()
                     calls["recent"] = [t for t in calls["recent"] if now-t < 60]
-                    if calls["total"] >= max_calls:
-                        raise ProviderError("This server's model-call budget is used up. No additional request was sent.", 429)
+                    # Lifetime counters are useful for bounded local experiments,
+                    # not hosted fairness: restarts/sleep must not reset quotas.
+                    # Keep an explicit zero as an operator/local generation stop.
+                    if max_calls==0 or (not control and calls["total"] >= max_calls):
+                        raise ProviderError("Analysis is disabled or this local test allowance is used. Your evidence is unchanged; no request was sent.", 429)
                     if len(calls["recent"]) >= 8:
                         raise ProviderError("Please wait a minute before another investigation request.", 429)
                     if control:
-                        try:control.reserve(session.owner)
+                        try:control.reserve(session.owner,daily_global,daily_member)
                         except ValueError as exc:raise ProviderError(str(exc),429) from None
                     calls["total"] += 1
                     calls["recent"].append(now)
@@ -650,11 +661,13 @@ def main():
     parser = argparse.ArgumentParser(description="Launch the local Visual Investigator app.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=int(os.environ.get('PORT','8765')))
-    parser.add_argument("--max-calls", type=int, default=int(os.environ.get('VI_MAX_CALLS','30')), help="Lifetime model request cap, including failed requests.")
+    parser.add_argument("--max-calls", type=int, default=int(os.environ.get('VI_MAX_CALLS','30')), help="Local-only lifetime cap; hosted beta uses durable daily limits. Zero disables generation in either mode.")
+    parser.add_argument('--daily-global',type=int,default=int(os.environ.get('VI_DAILY_GLOBAL','30')))
+    parser.add_argument('--daily-member',type=int,default=int(os.environ.get('VI_DAILY_MEMBER','20')))
     parser.add_argument('--experimental-ledger',action='store_true',help='Opt into the unproven reported-specification workflow.')
     args = parser.parse_args()
     access=Access.configured()
-    uvicorn.run(create_app(max_calls=args.max_calls, access=access, enable_ledger=args.experimental_ledger, allow_lan=args.host not in ("127.0.0.1", "localhost", "::1")), host=args.host, port=args.port, access_log=False,proxy_headers=True,forwarded_allow_ips=os.environ.get('FORWARDED_ALLOW_IPS','127.0.0.1'))
+    uvicorn.run(create_app(max_calls=args.max_calls, access=access, daily_global=args.daily_global,daily_member=args.daily_member, enable_ledger=args.experimental_ledger, allow_lan=args.host not in ("127.0.0.1", "localhost", "::1")), host=args.host, port=args.port, access_log=False,proxy_headers=True,forwarded_allow_ips=os.environ.get('FORWARDED_ALLOW_IPS','127.0.0.1'))
 
 
 if __name__ == "__main__":
